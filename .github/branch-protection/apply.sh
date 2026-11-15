@@ -240,7 +240,7 @@ What this means in practice:
   * branches must be up to date with main before merging
   * the five required status checks must pass
   * force-pushes and branch deletion are blocked
-  * commits must be signed
+  * commits must be signed            <-- NOT in this ruleset, see docs/CI_CD.md §5
 
 Next steps:
 

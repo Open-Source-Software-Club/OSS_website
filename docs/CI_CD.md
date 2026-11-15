@@ -618,7 +618,7 @@ Three rules that are not negotiable:
   roadmap still requires a manual NVDA/VoiceOver pass before launch.
 - **Branch protection still needs one human action.** The ruleset is written,
   validated and proven — every one of the five required checks passes on PR
-  #11 — but it cannot be applied from an automation token. GitHub App
+  #13 — but it cannot be applied from an automation token. GitHub App
   installation tokens get `Resource not accessible by integration` on the
   rulesets API even with admin permission on the repository. Somebody has to
   run `apply.sh` with a personal access token, or import `ruleset.json` through
