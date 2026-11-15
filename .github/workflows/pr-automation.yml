@@ -69,15 +69,50 @@ jobs:
           fi
           python3 - <<'PY'
           import sys, yaml
+
+          MATCHERS = {'changed-files', 'head-branch', 'base-branch', 'any', 'all'}
+          TOP_LEVEL_SCALARS = {'changed-files-labels-limit', 'max-files-changed'}
+
           try:
               cfg = yaml.safe_load(open('.github/labeler.yml', encoding='utf-8'))
           except yaml.YAMLError as exc:
               print(f'::error::.github/labeler.yml is not valid YAML: {exc}')
               sys.exit(1)
+
           if not isinstance(cfg, dict) or not cfg:
               print('::error::.github/labeler.yml is empty or malformed.')
               sys.exit(1)
-          print(f'labeler.yml is valid ({len(cfg)} rule group(s)).')
+
+          problems = []
+          labels = 0
+          for label, rules in cfg.items():
+              if label in TOP_LEVEL_SCALARS:
+                  continue
+              labels += 1
+              # The v5+ schema: label -> list of configuration objects. A mapping
+              # here is the v4 shape, and the action rejects it at run time with
+              # "should be array of config options" — after the labels have
+              # already failed to apply. Catch it before the run.
+              if not isinstance(rules, list):
+                  problems.append(
+                      f"'{label}': expected a list of rule objects, got {type(rules).__name__} "
+                      f"(actions/labeler v5+ schema)")
+                  continue
+              for rule in rules:
+                  if not isinstance(rule, dict) or not rule:
+                      problems.append(f"'{label}': every list entry must be a rule object")
+                      continue
+                  unknown = set(rule) - MATCHERS
+                  if unknown:
+                      problems.append(
+                          f"'{label}': unknown matcher(s) {sorted(unknown)}; "
+                          f"allowed: {sorted(MATCHERS)} (note: 'title' was removed in v5)")
+
+          if problems:
+              for problem in problems:
+                  print(f'::error::{problem}')
+              sys.exit(1)
+          print(f'labeler.yml is valid ({labels} label(s), actions/labeler v5+ schema).')
           PY
 
       - name: Apply labels
@@ -86,3 +121,47 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
           sync-labels: true
+
+      # actions/labeler v5 removed `title:` matching, and release-drafter groups
+      # release notes by exactly these labels. The pull-request title is already
+      # required to be a Conventional Commit header by "PR Conventions", so the
+      # mapping is a lookup rather than a guess.
+      #
+      # The title is read from `context.payload` inside the script and never
+      # interpolated through `${{ }}`: a title is contributor-controlled text.
+      - name: Apply labels from the Conventional Commit title
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const map = [
+              [/^feat(\(.+\))?!?:/i, 'type: feature'],
+              [/^fix(\(.+\))?!?:/i, 'type: bug'],
+              [/^docs(\(.+\))?!?:/i, 'type: docs'],
+              [/^refactor(\(.+\))?!?:/i, 'type: refactor'],
+              [/^(chore|build|ci|perf|test|style)(\(.+\))?!?:/i, 'type: maintenance'],
+            ];
+
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info('No pull request in the payload; nothing to label.');
+              return;
+            }
+
+            const title = pr.title || '';
+            const wanted = map.filter(([re]) => re.test(title)).map(([, label]) => label);
+            if (wanted.length === 0) {
+              core.info(`Title does not match a Conventional Commit type: ${title}`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+            const current = (pr.labels || []).map((label) => label.name);
+            const toAdd = wanted.filter((label) => !current.includes(label));
+            if (toAdd.length === 0) {
+              core.info('Title labels are already present.');
+              return;
+            }
+
+            await github.rest.issues.addLabels({ owner, repo, issue_number, labels: toAdd });
+            core.info(`Applied ${toAdd.join(', ')} from the title.`);

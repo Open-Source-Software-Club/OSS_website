@@ -76,23 +76,21 @@ jobs:
             exit 1
           fi
 
-      # pipx ships with the ubuntu runner image; it installs into an isolated
-      # environment so a broken transitive dependency of some other tool cannot
-      # affect this one. The --break-system-packages fallback exists because
-      # pipx has been absent from a runner image before.
+      # An explicitly created virtual environment is the only install method
+      # that does not depend on a helper (pipx, uv) being present on the runner
+      # image or on where that helper puts its binaries. The first version of
+      # this step guessed at `~/.local/bin` after `pipx install` and failed with
+      # exit code 127 — "zizmor: not found" — before the audit even ran.
+      #
+      # A venv also sidesteps PEP 668: the runner's system Python is externally
+      # managed, so a plain `pip install` is refused.
       - name: Install zizmor
         run: |
-          if command -v pipx >/dev/null 2>&1; then
-            pipx install "zizmor==${ZIZMOR_VERSION}"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          elif command -v uv >/dev/null 2>&1; then
-            uv tool install "zizmor==${ZIZMOR_VERSION}"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          else
-            python3 -m pip install --user --break-system-packages "zizmor==${ZIZMOR_VERSION}"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          fi
-          "$HOME/.local/bin/zizmor" --version
+          python3 -m venv "$RUNNER_TEMP/zizmor-venv"
+          "$RUNNER_TEMP/zizmor-venv/bin/python" -m pip install --quiet --disable-pip-version-check \
+            "zizmor==${ZIZMOR_VERSION}"
+          echo "$RUNNER_TEMP/zizmor-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zizmor-venv/bin/zizmor" --version
 
       - name: Audit the workflows
         id: audit

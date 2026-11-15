@@ -10,125 +10,105 @@
 # labels.
 #
 # Used by .github/workflows/pr-automation.yml
+#
+# SCHEMA — actions/labeler v5 and later
+#   Each label maps to a **list** of configuration objects:
+#
+#       'label':
+#         - changed-files:
+#             - any-glob-to-any-file: 'path/**'
+#
+#   This file used to use the v4 shape (`'label': { changed-files: ... }`, a
+#   mapping instead of a list) and the run failed with
+#   "found unexpected type for label 'area: frontend' (should be array of config
+#   options)" — every pull request had been unlabelled since the labeler was
+#   upgraded to v5. `pr-automation.yml` now validates this shape before the
+#   action runs, so the mistake cannot recur silently.
+#
+#   v5 also removed `title:` matching. Conventional-Commit labels from the pull
+#   request title are applied by the "Apply title labels" step in
+#   pr-automation.yml instead, because release-drafter groups release notes by
+#   those labels.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Area
+# Area — from the paths in the diff.
 # ------------------------------------------------------------------------------
 'area: frontend':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/components/**'
-        - 'src/app/**'
-        - 'src/styles/**'
-        - 'src/features/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/components/**'
+          - 'src/app/**'
+          - 'src/styles/**'
+          - 'src/features/**'
 
 'area: backend':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/app/api/**'
-        - 'src/lib/**'
-        - 'supabase/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/app/api/**'
+          - 'src/lib/**'
+          - 'supabase/**'
 
 'area: fullstack':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/features/**'
-        - 'src/app/(member)/**'
-        - 'src/app/admin/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/features/**'
+          - 'src/app/(member)/**'
+          - 'src/app/admin/**'
 
 'area: docs':
-  changed-files:
-    - any-glob-to-any-file:
-        - '**/*.md'
-        - 'docs/**'
-        - 'src/**/*.md'
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'docs/**'
 
 'area: devops':
-  changed-files:
-    - any-glob-to-any-file:
-        - '.github/**'
-        - 'scripts/**'
-        - '.githooks/**'
-        - 'Dockerfile*'
-        - 'vercel.json'
-        - 'next.config.*'
-        - '*.toml'
-        - '*.yml'
-        - '*.yaml'
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/**'
+          - '.githooks/**'
+          - 'Dockerfile*'
+          - 'vercel.json'
+          - 'next.config.*'
+          - '*.toml'
+          - '*.yml'
+          - '*.yaml'
 
 'area: testing':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'tests/**'
-        - 'src/**/*.test.*'
-        - 'src/**/*.spec.*'
-        - 'supabase/tests/**'
-        - 'playwright.config.*'
-        - 'vitest.config.*'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**'
+          - 'src/**/*.test.*'
+          - 'src/**/*.spec.*'
+          - 'supabase/tests/**'
+          - 'playwright.config.*'
+          - 'vitest.config.*'
 
 'area: design':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/components/ui/**'
-        - 'src/components/layout/**'
-        - 'src/components/brand/**'
-        - 'src/styles/**'
-        - 'public/assets/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/components/ui/**'
+          - 'src/components/layout/**'
+          - 'src/components/brand/**'
+          - 'src/styles/**'
+          - 'public/assets/**'
 
 'area: security':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/lib/github/**'
-        - 'src/lib/rbac/**'
-        - 'src/lib/env/**'
-        - 'src/middleware.ts'
-        - 'src/app/api/webhooks/**'
-        - 'SECURITY.md'
-        - '.github/workflows/security.yml'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/lib/github/**'
+          - 'src/lib/rbac/**'
+          - 'src/lib/env/**'
+          - 'src/middleware.ts'
+          - 'src/app/api/webhooks/**'
+          - 'SECURITY.md'
+          - '.github/workflows/security.yml'
 
 # ------------------------------------------------------------------------------
-# Type — a reasonable guess from the title, refined by the reviewer.
-# ------------------------------------------------------------------------------
-'type: bug':
-  title:
-    - '/^fix(\(.+\))?!?:/i'
-
-'type: feature':
-  title:
-    - '/^feat(\(.+\))?!?:/i'
-
-'type: docs':
-  title:
-    - '/^docs(\(.+\))?!?:/i'
-
-'type: refactor':
-  title:
-    - '/^refactor(\(.+\))?!?:/i'
-
-'type: maintenance':
-  title:
-    - '/^(chore|build|ci|perf)(\(.+\))?!?:/i'
-
-# ------------------------------------------------------------------------------
-# Difficulty — derived from the label the contributor chose on the issue.
-# ------------------------------------------------------------------------------
-'difficulty: beginner':
-  title:
-    - '/beginner|good first/i'
-
-'difficulty: intermediate':
-  title:
-    - '/intermediate/i'
-
-'difficulty: advanced':
-  title:
-    - '/advanced|hard/i'
-
-# ------------------------------------------------------------------------------
-# Workflow
+# Workflow — anything under src/ deserves a second pair of eyes.
 # ------------------------------------------------------------------------------
 'needs review':
-  changed-files:
-    - any-glob-to-any-file:
-        - 'src/**'
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/**'
