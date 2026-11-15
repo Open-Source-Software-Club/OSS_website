@@ -188,6 +188,13 @@ jobs:
       - name: Check documentation links and structure
         run: bash scripts/checks/check-docs.sh
 
+      # The rulesets are applied to GitHub by an admin, so no pull request ever
+      # executes them. Validate the payloads here instead: a required status
+      # check that names a job no workflow emits is a branch that can never be
+      # merged, and it would only be discovered at apply time.
+      - name: Validate branch protection rulesets
+        run: bash scripts/checks/check-rulesets.sh
+
       # The gate itself is shell. A syntax error in one of these scripts is not
       # a broken check — it is a check that silently stops running, which is
       # worse. `bash -n` parses every script without executing it.

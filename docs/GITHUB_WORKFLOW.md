@@ -36,8 +36,18 @@ Examples:
 - No force-push to `main`, no branch deletion
 - PR title is a Conventional Commit, because squash-merge uses it as the commit on `main`
 
-Applied by `.github/branch-protection/apply.sh` from
-`.github/branch-protection/ruleset.json`.
+Applied by `.github/branch-protection/apply.sh`, which pushes every file in
+`.github/branch-protection/rulesets/`:
+
+| Ruleset | Covers |
+|---|---|
+| Protect main | the merge gate above |
+| Protect release branches | `release/**`, `hotfix/**`, `support/**` — no force-push, no deletion, reviewed PRs |
+| Protect release tags | `v*` tags — immutable, semver names only |
+| Branch naming | `<type>/<description>` for every new branch |
+
+`optional/require-signed-commits.json` is available but not applied by default.
+See [CI_CD](./CI_CD.md) §5.
 
 ### PR template checklist
 

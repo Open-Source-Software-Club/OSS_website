@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "Ruleset 2 of 5 — Protect release trains.",
+    "",
+    "Applies to release/**, hotfix/** and support/** — the branch families that",
+    "scripts/checks/check-branch-name.sh already treats as legitimate, and that",
+    "CONTRIBUTING.md documents as the only branches that may be cut from main",
+    "and kept alive after a merge.",
+    "",
+    "WHY A SEPARATE RULESET",
+    "  'Protect main' targets ~DEFAULT_BRANCH only. A release branch is the same",
+    "  kind of object: it is cut once, built against for weeks, and must not move",
+    "  under the feet of whoever is testing it. Force-pushing a release branch",
+    "  silently changes what was shipped; deleting it takes the evidence with it.",
+    "",
+    "WHY THERE ARE NO REQUIRED STATUS CHECKS HERE",
+    "  Every workflow in this repository is triggered by pull requests that",
+    "  target main (`pull_request: branches: [main]`). Requiring those contexts",
+    "  on a pull request that targets release/1.2 would wait forever for checks",
+    "  that never run — a permanently unmergeable branch. Review is required;",
+    "  the build gate stays where the workflows actually run.",
+    "  If release branches ever get their own CI trigger, add the contexts here",
+    "  and re-run apply.sh.",
+    "",
+    "Merge commits are allowed on a release branch (a backport of a fix that",
+    "must also be merged into the train), which is why required_linear_history",
+    "is not part of this ruleset. main itself is still squash-only."
+  ],
+
+  "name": "Protect release branches",
+  "target": "branch",
+  "enforcement": "active",
+
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/release/**",
+        "refs/heads/hotfix/**",
+        "refs/heads/support/**"
+      ],
+      "exclude": []
+    }
+  },
+
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["squash", "merge"]
+      }
+    }
+  ],
+
+  "bypass_actors": []
+}

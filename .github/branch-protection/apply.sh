@@ -2,28 +2,81 @@
 # ==============================================================================
 # .github/branch-protection/apply.sh
 #
-# Applies the branch protection ruleset defined in ruleset.json to this
+# Applies the rulesets in .github/branch-protection/rulesets/*.json to this
 # repository, and creates the GitHub environments the deployment workflows need.
 #
-# Docs: docs/CI_CD.md
+# Docs: docs/CI_CD.md §5
 #
 # Requirements
 #   * gh, authenticated as a user with ADMIN access to the repository
-#     (an installation token cannot administer branch rulesets)
-#   * the CODEOWNERS teams to already exist, or the rule silently does nothing
+#     (a GitHub App installation token cannot administer repository rulesets)
+#   * python3 (payload validation only — no third-party modules)
 #
 # Usage
-#   bash .github/branch-protection/apply.sh            # create or update
-#   bash .github/branch-protection/apply.sh --dry-run  # show what would change
-#   bash .github/branch-protection/apply.sh --remove   # delete the ruleset
+#   bash .github/branch-protection/apply.sh                    # create or update all
+#   bash .github/branch-protection/apply.sh --dry-run          # show what would change
+#   bash .github/branch-protection/apply.sh --remove           # delete the managed rulesets
+#   bash .github/branch-protection/apply.sh --list             # what exists vs. what is defined
+#   bash .github/branch-protection/apply.sh --file rulesets/protect-tags.json
+#                                                              # just one file (repeatable)
+#
+#   The opt-in ruleset lives outside the default set:
+#   bash .github/branch-protection/apply.sh --file optional/require-signed-commits.json
 #
 # The script is idempotent: running it twice leaves the repository in the same
-# state as running it once.
+# state as running it once. Rulesets are matched by their `name` field, not by
+# the file name, so renaming a file is safe. Renaming a ruleset creates a second
+# ruleset with the new name — remove the old one with --remove first.
 # ==============================================================================
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-RULESET_FILE="$HERE/ruleset.json"
+SETS_DIR="$HERE/rulesets"
+
+# Remove every generated payload on exit, including on a validation failure:
+# the validator may write three files before rejecting the fourth, and a stale
+# *.payload.json is a hand-editable copy of a ruleset that nothing applies.
+cleanup() {
+  find "$HERE" -name '*.payload.json' -type f -delete 2>/dev/null || true
+}
+trap cleanup EXIT
+
+DRY_RUN=0
+REMOVE=0
+LIST_ONLY=0
+FILES=()
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1 ;;
+    --remove)  REMOVE=1 ;;
+    --list)    LIST_ONLY=1 ;;
+    --file)
+      if [ "$#" -lt 2 ]; then
+        echo "apply: --file needs a path (relative to $HERE)." >&2
+        exit 2
+      fi
+      case "$2" in
+        /*) FILES+=("$2") ;;
+        *)  FILES+=("$HERE/$2") ;;
+      esac
+      shift
+      ;;
+    -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
+    *) echo "apply: unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+say()  { printf '\n\033[1;34m==>\033[0m %s\n' "$1"; }
+fail() { printf '\n\033[1;31m==>\033[0m %s\n' "$1" >&2; }
+
+# ------------------------------------------------------------------------------
+# Preconditions.
+# ------------------------------------------------------------------------------
+command -v gh >/dev/null 2>&1 || { echo "apply: gh is not installed. https://cli.github.com" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "apply: python3 is required to validate the payloads." >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "apply: gh is not authenticated. Run 'gh auth login'." >&2; exit 1; }
 
 REPO="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)}"
 if [ -z "$REPO" ]; then
@@ -31,87 +84,206 @@ if [ -z "$REPO" ]; then
   exit 1
 fi
 
-DRY_RUN=0
-REMOVE=0
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
-    --remove)  REMOVE=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
-    *) echo "Unknown option: $arg" >&2; exit 2 ;;
-  esac
-done
+# ------------------------------------------------------------------------------
+# The default set.
+#
+# Order is for readability only: rulesets layer, they do not overwrite each
+# other. 'Protect main' is listed first because it is the one that makes CI
+# mandatory; the rest harden surfaces that main does not cover.
+# ------------------------------------------------------------------------------
+if [ "${#FILES[@]}" -eq 0 ]; then
+  for f in \
+    "$SETS_DIR/protect-main.json" \
+    "$SETS_DIR/protect-release-branches.json" \
+    "$SETS_DIR/protect-tags.json" \
+    "$SETS_DIR/branch-naming.json"
+  do
+    [ -f "$f" ] && FILES+=("$f")
+  done
+fi
 
-say() { printf '\n\033[1;34m==>\033[0m %s\n' "$1"; }
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "apply: gh is not installed. https://cli.github.com" >&2
+if [ "${#FILES[@]}" -eq 0 ]; then
+  echo "apply: no ruleset files found in $SETS_DIR." >&2
   exit 1
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "apply: gh is not authenticated. Run 'gh auth login'." >&2
+# ------------------------------------------------------------------------------
+# Validate everything BEFORE touching the API.
+#
+# A payload rejected halfway through leaves the repository with some rules
+# enforced and others silently missing, which is worse than having applied
+# nothing. So: parse every file, shape-check every file, write every API payload
+# to disk, and only then start making requests.
+#
+# The helper prints one line per file, tab-separated:
+#     <ruleset name> <payload path> <source path>
+# ------------------------------------------------------------------------------
+say "Validating ${#FILES[@]} ruleset file(s)"
+
+ENTRIES="$(python3 - "${FILES[@]}" <<'PY'
+import json
+import os
+import sys
+
+REQUIRED = ('name', 'target', 'enforcement', 'conditions', 'rules')
+TARGETS = {'branch', 'tag', 'push'}
+ENFORCEMENT = {'active', 'disabled', 'evaluate'}
+
+failed = False
+seen = {}
+
+
+def die(message):
+    print(f'apply: {message}', file=sys.stderr)
+    sys.exit(1)
+
+
+for path in sys.argv[1:]:
+    # Relative paths in messages: this script is often run from the repository
+    # root, and an absolute /home/... path in an error is noise.
+    display = os.path.relpath(path)
+    if not os.path.isfile(path):
+        die(f'{display} not found.')
+
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except json.JSONDecodeError as exc:
+        die(f'{display} is not valid JSON: {exc}')
+
+    if not isinstance(data, dict):
+        die(f'{display} must contain a JSON object.')
+
+    missing = [key for key in REQUIRED if key not in data]
+    if missing:
+        die(f'{display} is missing required key(s): {", ".join(missing)}.')
+
+    if data['target'] not in TARGETS:
+        die(f"{display} has target {data['target']!r}; expected one of {sorted(TARGETS)}.")
+
+    if data['enforcement'] not in ENFORCEMENT:
+        die(f"{display} has enforcement {data['enforcement']!r}; expected one of {sorted(ENFORCEMENT)}.")
+
+    if not isinstance(data['rules'], list):
+        die(f'{display} has a non-list "rules".')
+
+    if not data['rules']:
+        die(f'{display} has no rules — a ruleset that enforces nothing.')
+
+    for rule in data['rules']:
+        if not isinstance(rule, dict) or 'type' not in rule:
+            die(f'{display} has a rule without a "type".')
+
+    # Two files defining the same ruleset name would make one silently
+    # overwrite the other depending on API ordering. That is a bug in this
+    # directory, not in GitHub.
+    name = data['name']
+    if name in seen:
+        die(f'{display} and {os.path.relpath(seen[name])} both define the ruleset {name!r}.')
+    seen[name] = path
+
+    # The payload is the file minus its `_comment` documentation keys, written
+    # next to the source (and gitignored) so --dry-run can print exactly what
+    # would be sent over the wire.
+    payload = os.path.splitext(path)[0] + '.payload.json'
+    stripped = {k: v for k, v in data.items() if not k.startswith('_')}
+    with open(payload, 'w', encoding='utf-8') as fh:
+        json.dump(stripped, fh, indent=2, ensure_ascii=False)
+        fh.write('\n')
+
+    print('\t'.join((name, payload, path)))
+PY
+)"
+
+NAMES=()
+PAYLOADS=()
+SOURCES=()
+while IFS=$'\t' read -r name payload src; do
+  [ -z "$name" ] && continue
+  NAMES+=("$name")
+  PAYLOADS+=("$payload")
+  SOURCES+=("$src")
+  printf '    \033[1;32m✓\033[0m %-34s %s\n' "$name" "$(basename "$src")"
+done <<< "$ENTRIES"
+
+# ------------------------------------------------------------------------------
+# What GitHub actually has. One API call, tab-separated, so every later lookup
+# is a grep rather than another request (and cannot be rate-limited mid-run).
+# ------------------------------------------------------------------------------
+existing_id_for() {
+  printf '%s\n' "$EXISTING" | awk -F'\t' -v want="$1" '$2 == want { print $1; exit }'
+}
+
+if ! EXISTING="$(gh api "repos/$REPO/rulesets?per_page=100" \
+                   --jq '.[] | "\(.id)\t\(.name)\t\(.target)\t\(.enforcement)"' 2>/dev/null)"; then
+  cat >&2 <<'MSG'
+apply: cannot read repository rulesets.
+
+Check that gh is authenticated and that you can see the repository.
+
+  gh auth status
+  gh repo view
+MSG
   exit 1
 fi
 
 say "Repository: $REPO"
 
-# ------------------------------------------------------------------------------
-# Verify we can actually ADMINISTER rulesets.
-#
-# Reading rulesets is not proof of write access. A GitHub App installation
-# token with "Administration: read" passes a read probe and then fails with
-# `Resource not accessible by integration (HTTP 403)` on the actual POST — so
-# the read probe is deliberately followed by a write probe against an endpoint
-# that is harmless and reversible.
-#
-# This is not theoretical: the sandbox that built this pipeline had exactly
-# that token, and the read probe alone was not enough to catch it.
-# ------------------------------------------------------------------------------
-if ! gh api "repos/$REPO/rulesets" >/dev/null 2>&1; then
-  cat >&2 <<'MSG'
-apply: cannot read repository rulesets.
-
-Check that gh is authenticated and that the repository name is correct.
-
-  gh auth status
-MSG
-  exit 1
+if [ "$LIST_ONLY" -eq 1 ]; then
+  say "Rulesets on $REPO"
+  if [ -z "$EXISTING" ]; then
+    echo "    (none)"
+  else
+    printf '%s\n' "$EXISTING" | awk -F'\t' '{ printf "    %-34s %-8s %-10s id=%s\n", $2, $3, $4, $1 }'
+  fi
+  say "Rulesets defined in $HERE"
+  i=0
+  while [ "$i" -lt "${#NAMES[@]}" ]; do
+    if [ -n "$(existing_id_for "${NAMES[$i]}")" ]; then
+      printf '    %-34s %s\n' "${NAMES[$i]}" 'applied'
+    else
+      printf '    %-34s %s\n' "${NAMES[$i]}" 'NOT applied'
+    fi
+    i=$((i + 1))
+  done
+  exit 0
 fi
 
-write_probe() {
-  # Creating and immediately deleting a ruleset with no rules is a no-op on
-  # the branch, and proves the token can administer rulesets.
-  local id
-  id="$(gh api -X POST "repos/$REPO/rulesets" \
-          --input <(printf '%s' '{"name":"__apply_probe__","target":"branch","enforcement":"disabled","conditions":{"ref_name":{"include":["refs/heads/__nonexistent__"],"exclude":[]}},"rules":[]}') \
-          --jq '.id' 2>/dev/null)" || return 1
-  [ -z "$id" ] && return 1
-  gh api -X DELETE "repos/$REPO/rulesets/$id" >/dev/null 2>&1 || true
-  return 0
-}
+# ------------------------------------------------------------------------------
+# Prove the token can ADMINISTER rulesets, not merely read them.
+#
+# A GitHub App installation token with "Administration: read" passes a read
+# probe and then fails with `Resource not accessible by integration (HTTP 403)`
+# on the actual POST — so the read probe is followed by a write probe against a
+# ruleset that matches no refs at all and is deleted immediately.
+#
+# This is not theoretical: the sandbox that built this pipeline had exactly that
+# token, and the read probe alone was not enough to catch it.
+# ------------------------------------------------------------------------------
+if [ "$DRY_RUN" -eq 0 ]; then
+  probe_body='{"name":"__apply_probe__","target":"branch","enforcement":"disabled","conditions":{"ref_name":{"include":["refs/heads/__nonexistent__"],"exclude":[]}},"rules":[{"type":"deletion"}]}'
 
-if ! write_probe; then
-  cat >&2 <<'MSG'
+  probe_id="$(printf '%s' "$probe_body" \
+    | gh api -X POST "repos/$REPO/rulesets" --input - --jq '.id' 2>/dev/null || true)"
+
+  if [ -z "$probe_id" ]; then
+    cat >&2 <<'MSG'
 apply: this token cannot administer repository rulesets.
 
-The payload in ruleset.json is valid and ready. The blocker is the credential,
+The payloads in rulesets/ are valid and ready. The blocker is the credential,
 not the configuration.
 
 DIAGNOSIS
-  The error is `Resource not accessible by integration`, and
-  `GET /installation/repositories` is also unreachable. That combination means
-  GH_TOKEN is a GitHub App installation token, and the app does not hold the
-  "Administration" repository permission.
-
-  Granting the account write access to the repository does NOT fix this. The
-  token already reports admin:true on the repo — the missing permission is on
-  the App itself, and only the App's configuration can grant it.
+  `Resource not accessible by integration` on a POST to /rulesets, while the
+  account reports admin:true on the repository, means GH_TOKEN is a GitHub App
+  installation token and the App does not hold the "Administration" repository
+  permission. Granting the account write access does not change this: the
+  missing permission is on the App.
 
 THREE WAYS TO FIX IT
 
   A. Give the GitHub App the Administration permission (keeps automation
-     working, including from CI and from this pipeline):
+     working, including from CI):
        1. Organisation Settings → Developer settings → GitHub Apps
        2. Select the app this token belongs to
        3. Permissions & events → Repository permissions
@@ -124,91 +296,100 @@ THREE WAYS TO FIX IT
        gh auth login          # HTTPS + token, classic PAT with `repo` scope
        bash .github/branch-protection/apply.sh
 
-  C. Import it through the web UI (no token needed at all):
+  C. Import through the web UI (no token needed at all):
        Settings → Rules → Rulesets → New ruleset → Import a ruleset
-       then paste the contents of .github/branch-protection/ruleset.json
+     GitHub imports ONE ruleset per file, so this is one paste per file in
+     rulesets/ — four pastes, not one.
 
-Note that A is the only option that lets a workflow or a future automation
-apply ruleset changes on its own. B and C are one-shot.
+Option A is the only one that lets a workflow or future automation apply
+ruleset changes on its own. B and C are one-shot.
 
-Nothing else in the pipeline depends on this script. The workflows, hooks and
-checks all work without it; the ruleset is what makes them mandatory.
+Nothing else in the pipeline depends on this script: the workflows, hooks and
+checks all work without it. The rulesets are what make them mandatory.
 MSG
-  exit 1
+    exit 1
+  fi
+
+  gh api -X DELETE "repos/$REPO/rulesets/$probe_id" >/dev/null 2>&1 || true
+  say "Token can administer rulesets."
 fi
-say "Token can administer rulesets."
 
 # ------------------------------------------------------------------------------
-# Remove
+# Remove.
 # ------------------------------------------------------------------------------
 if [ "$REMOVE" -eq 1 ]; then
-  id="$(gh api "repos/$REPO/rulesets" --jq '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)"
-  if [ -z "$id" ]; then
-    say "No 'Protect main' ruleset found — nothing to remove."
-    exit 0
-  fi
-  if [ "$DRY_RUN" -eq 1 ]; then
-    say "Would delete ruleset $id"
-    exit 0
-  fi
-  gh api -X DELETE "repos/$REPO/rulesets/$id" >/dev/null
-  say "Deleted ruleset $id"
+  i=0
+  while [ "$i" -lt "${#NAMES[@]}" ]; do
+    name="${NAMES[$i]}"
+    id="$(existing_id_for "$name")"
+    if [ -z "$id" ]; then
+      say "No '$name' ruleset found — nothing to remove."
+    elif [ "$DRY_RUN" -eq 1 ]; then
+      say "Would delete '$name' (id $id)"
+    else
+      gh api -X DELETE "repos/$REPO/rulesets/$id" >/dev/null
+      say "Deleted '$name' (id $id)"
+    fi
+    i=$((i + 1))
+  done
   exit 0
 fi
 
 # ------------------------------------------------------------------------------
-# Create or update
+# Create or update, one file at a time.
+#
+# A failure on one ruleset does not roll back the others: every rule in this
+# directory only ever *adds* restriction, so a partial application is strictly
+# safer than none, and stopping would leave the operator guessing about the
+# result. Each failure is reported per file and the exit code is non-zero.
 # ------------------------------------------------------------------------------
-if [ ! -f "$RULESET_FILE" ]; then
-  echo "apply: $RULESET_FILE not found." >&2
-  exit 1
-fi
+failures=0
+applied=0
+i=0
 
-python3 - "$RULESET_FILE" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding='utf-8') as fh:
-    data = json.load(fh)
-# Strip the documentation keys so only real API fields are sent.
-data = {k: v for k, v in data.items() if not k.startswith('_')}
-with open(sys.argv[1] + '.payload.json', 'w', encoding='utf-8') as fh:
-    json.dump(data, fh, indent=2)
-print('ruleset.json is valid JSON; payload prepared.')
-PY
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  name="${NAMES[$i]}"
+  payload="${PAYLOADS[$i]}"
+  src="${SOURCES[$i]}"
+  id="$(existing_id_for "$name")"
 
-PAYLOAD="$RULESET_FILE.payload.json"
-trap 'rm -f "$PAYLOAD"' EXIT
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if [ -n "$id" ]; then
+      say "Would UPDATE '$name' (id $id) from $(basename "$src")"
+    else
+      say "Would CREATE '$name' from $(basename "$src")"
+    fi
+    cat "$payload"
+    i=$((i + 1))
+    continue
+  fi
 
-EXISTING_ID="$(gh api "repos/$REPO/rulesets" --jq '.[] | select(.name == "Protect main") | .id' 2>/dev/null || true)"
+  if [ -n "$id" ]; then
+    if err="$(gh api -X PUT "repos/$REPO/rulesets/$id" --input "$payload" 2>&1 >/dev/null)"; then
+      say "Updated '$name' (id $id)"
+      applied=$((applied + 1))
+    else
+      fail "Failed to update '$name'"
+      printf '%s\n' "$err" | sed 's/^/    /' >&2
+      failures=$((failures + 1))
+    fi
+  else
+    if err="$(gh api -X POST "repos/$REPO/rulesets" --input "$payload" 2>&1 >/dev/null)"; then
+      say "Created '$name'"
+      applied=$((applied + 1))
+    else
+      fail "Failed to create '$name'"
+      printf '%s\n' "$err" | sed 's/^/    /' >&2
+      failures=$((failures + 1))
+    fi
+  fi
+
+  i=$((i + 1))
+done
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  if [ -n "$EXISTING_ID" ]; then
-    say "Would UPDATE ruleset $EXISTING_ID from $PAYLOAD"
-  else
-    say "Would CREATE a new ruleset from $PAYLOAD"
-  fi
-  cat "$PAYLOAD"
+  say "Dry run: nothing was written."
   exit 0
-fi
-
-apply_ruleset() {
-  if [ -n "$EXISTING_ID" ]; then
-    gh api -X PUT "repos/$REPO/rulesets/$EXISTING_ID" --input "$PAYLOAD" >/dev/null
-  else
-    gh api -X POST "repos/$REPO/rulesets" --input "$PAYLOAD" >/dev/null
-  fi
-}
-
-if err="$(apply_ruleset 2>&1)"; then
-  if [ -n "$EXISTING_ID" ]; then
-    say "Updated existing ruleset $EXISTING_ID"
-  else
-    say "Created a new ruleset"
-  fi
-else
-  echo "apply: failed to write the ruleset: $err" >&2
-  echo "apply: the payload is valid; this is a permissions problem. See the" >&2
-  echo "       guidance printed above about GitHub App installation tokens." >&2
-  exit 1
 fi
 
 # ------------------------------------------------------------------------------
@@ -227,20 +408,35 @@ done
 cat <<'MSG'
 
 ------------------------------------------------------------------------------
-Done. Branch protection is now active on the default branch.
+What is enforced now, and what it means in practice:
 
-What this means in practice:
+  Protect main
+    * nobody can push to main directly — everything arrives through a PR
+    * a PR cannot be merged without one approving review
+    * CODEOWNERS-protected paths need an approval from a code owner
+    * approvals are dismissed when new commits are pushed
+    * all review conversations must be resolved
+    * merge commits are rejected (linear history), and merges are squash-only
+    * branches must be up to date with main before merging
+    * the five required status checks must pass
+    * force-pushes and branch deletion are blocked
 
-  * nobody can push to main directly — everything arrives through a pull request
-  * a pull request cannot be merged without one approving review
-  * CODEOWNERS-protected paths need an approval from a code owner
-  * approvals are dismissed when new commits are pushed
-  * all review conversations must be resolved
-  * merge commits are rejected (linear history), and merges are squash-only
-  * branches must be up to date with main before merging
-  * the five required status checks must pass
-  * force-pushes and branch deletion are blocked
-  * commits must be signed            <-- NOT in this ruleset, see docs/CI_CD.md §5
+  Protect release branches
+    * release/**, hotfix/** and support/** cannot be force-pushed or deleted
+    * changes to them still need a reviewed pull request
+
+  Protect release tags
+    * v* tags cannot be deleted, force-pushed or re-pointed at another commit
+    * a tag name must be v<major>.<minor>.<patch>[-prerelease]
+
+  Branch naming
+    * new branches must be <type>/<description>, e.g. feat/events-rsvp
+    * dependabot/**, arena/** and the other automation prefixes are exempt
+
+  Deliberately NOT in the default set:
+    * commits must be signed      — optional/require-signed-commits.json, §5.5
+    * push rulesets (max file size, restricted extensions and paths) need the
+      GitHub Team plan; the payload to use then is in §5.6
 
 Next steps:
 
@@ -252,9 +448,16 @@ Next steps:
   4. Merge a documentation-only PR to confirm the gate is green.
 
 To see what is applied:
-  gh api repos/OWNER/REPO/rulesets --jq '.[].name'
+  bash .github/branch-protection/apply.sh --list
 
-To remove it:
+To remove the managed rulesets:
   bash .github/branch-protection/apply.sh --remove
 ------------------------------------------------------------------------------
 MSG
+
+if [ "$failures" -ne 0 ]; then
+  echo "apply: $failures ruleset(s) failed to apply. See the errors above." >&2
+  exit 1
+fi
+
+echo "apply: $applied ruleset(s) applied or updated."

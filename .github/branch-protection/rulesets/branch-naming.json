@@ -1,0 +1,72 @@
+{
+  "_comment": [
+    "Ruleset 4 of 5 — Branch naming, enforced by the server.",
+    "",
+    "This is the remote half of scripts/checks/check-branch-name.sh. Until now",
+    "the convention lived in a git hook, which means it was enforced exactly as",
+    "well as each contributor's 'bash scripts/install-hooks.sh' — that is, not at",
+    "all for anyone who skipped it, or for any push made from the web UI.",
+    "",
+    "THE PATTERN",
+    "  <type>/<short-description>, where type is one of the Conventional Commit",
+    "  types plus the release-train prefixes, exactly as CONTRIBUTING.md and the",
+    "  local hook define them.",
+    "",
+    "WHY THE AUTOMATION PREFIXES ARE EXCLUDED RATHER THAN MATCHED",
+    "  dependabot/** , arena/** and friends are long, machine-generated and not",
+    "  ours to rename. Excluding them in `conditions` keeps the human rule narrow",
+    "  enough to be readable in the Rules UI. Anything newly introduced by a bot",
+    "  needs its prefix added to `exclude` — otherwise its pushes are rejected,",
+    "  which is a noisy, confusing failure for everyone involved.",
+    "",
+    "  (Main, release/** and hotfix/** cannot match the pattern either, because",
+    "  those words are not in the type list; they are excluded explicitly so the",
+    "  intent survives a later widening of the pattern.)",
+    "",
+    "THIS IS THE MOST OPINIONATED RULESET IN THE SET",
+    "  It rejects a push. A contributor who typed 'my-branch' gets a GitHub error",
+    "  page mentioning a ruleset, not a friendly message, so the local hook and",
+    "  CONTRIBUTING.md stay the primary teacher. If the friction is ever judged",
+    "  too high for a first-time contributor, set \"enforcement\": \"disabled\" in",
+    "  this file and re-run apply.sh — do not delete the file, or the decision",
+    "  disappears from the history."
+  ],
+
+  "name": "Branch naming",
+  "target": "branch",
+  "enforcement": "active",
+
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/**"],
+      "exclude": [
+        "refs/heads/main",
+        "refs/heads/master",
+        "refs/heads/release/**",
+        "refs/heads/hotfix/**",
+        "refs/heads/support/**",
+        "refs/heads/dependabot/**",
+        "refs/heads/renovate/**",
+        "refs/heads/arena/**",
+        "refs/heads/codex/**",
+        "refs/heads/agent/**",
+        "refs/heads/copilot/**",
+        "refs/heads/github-actions/**",
+        "refs/heads/preview/**",
+        "refs/heads/gh-pages"
+      ]
+    }
+  },
+
+  "rules": [
+    {
+      "type": "branch_name_pattern",
+      "parameters": {
+        "operator": "regex",
+        "pattern": "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)/[a-z0-9][a-z0-9._-]*$"
+      }
+    }
+  ],
+
+  "bypass_actors": []
+}

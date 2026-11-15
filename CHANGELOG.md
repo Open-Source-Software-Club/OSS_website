@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Branch protection rulesets**, split into four files under
+  `.github/branch-protection/rulesets/` and applied by one script:
+  `Protect main` (the merge gate), `Protect release branches`
+  (`release/**`, `hotfix/**`, `support/**` — no force-push, no deletion,
+  reviewed PRs), `Protect release tags` (immutable `v*` tags with semver-only
+  names) and `Branch naming` (`<type>/<description>`, enforced by the server
+  rather than only by the local hook). The former single `ruleset.json` is now
+  `rulesets/protect-main.json`; `apply.sh` gained `--list` and `--file`.
+- `optional/require-signed-commits.json`: the commit-signing rule, kept out of
+  the default set because it would block a first-time contributor.
+- `scripts/checks/check-rulesets.sh`: validates every ruleset payload against
+  the rules GitHub accepts and fails the build when a required status check
+  names a job no workflow emits — a typo that would otherwise make the branch
+  permanently unmergeable, discoverable only at apply time. Runs in
+  `Repository Hygiene` and in the local gate.
 - `Workflow Security` (`workflow-security.yml`): a pinned `zizmor` audit that
   catches template injection, `pull_request_target` misuse, credential-stuffing
   of artifacts and unpinned actions in the pipeline itself.

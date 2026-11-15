@@ -336,8 +336,16 @@ summary.
 | Files larger than 1 MiB | `check-large-files.sh` |
 | Trailing whitespace, tabs, CRLF, missing final newline | `check-text-hygiene.sh` |
 | Non-Conventional-Commit messages | `check-commit-msg.sh`, `check-pr-meta.sh` |
-| Merge commits and direct pushes to `main` | branch protection ruleset |
+| Merge commits, force-pushes and direct pushes to `main` | `Protect main` ruleset |
+| Changes to `release/**`, `hotfix/**`, `support/**` without review | `Protect release branches` ruleset |
+| Deleting or moving a `v*` release tag, non-semver tag names | `Protect release tags` ruleset |
+| Branch names that do not follow `<type>/<description>` | `Branch naming` ruleset |
 | Unreviewed changes to `supabase/migrations`, `lib/github`, `lib/rbac` | `.github/CODEOWNERS` |
+
+The rulesets live in `.github/branch-protection/rulesets/` and are applied with
+`bash .github/branch-protection/apply.sh`. They are validated in CI by
+`check-rulesets.sh`, so a required status check that names a job no workflow
+emits fails the build instead of silently making a branch unmergeable.
 
 ### Run the same gate locally
 

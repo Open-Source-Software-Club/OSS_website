@@ -104,7 +104,7 @@ request can be merged. They are applied by
 
 | Check | Workflow | What it guarantees |
 |---|---|---|
-| `Repository Hygiene` | `ci.yml` | no forbidden files, no secrets, no oversized files, valid YAML, valid CODEOWNERS, clean whitespace |
+| `Repository Hygiene` | `ci.yml` | no forbidden files, no secrets, no oversized files, valid YAML, valid CODEOWNERS, valid ruleset payloads, clean whitespace |
 | `PR Conventions` | `ci.yml` | Conventional Commit title, valid branch name, linked issue, reviewable size, linear history |
 | `Verify (Lint · Types · Tests · Build)` | `ci.yml` | ESLint, TypeScript, Prettier, Vitest and `next build` all pass |
 | `Secret Scan` | `security.yml` | no credential material in any tracked file, no private keys by filename |
@@ -127,9 +127,14 @@ Advisory checks (valuable, but not blocking while the project is greenfield):
 request, always reports a conclusion, and a failure means the pipeline has
 acquired a defect that runs with a write token. Promote it by adding
 `{ "context": "Workflow Security" }` to `required_status_checks` in
-`.github/branch-protection/ruleset.json` and re-running `apply.sh`.
+`.github/branch-protection/rulesets/protect-main.json` and re-running `apply.sh`
+(`check-rulesets.sh` will confirm the context matches a real job before GitHub
+ever sees it).
 
-Once each of the other rows lands, add its `name:` the same way.
+Once each of the other rows lands, add its `name:` the same way. Do not add a
+context that is emitted only on `paths:`-filtered workflows to a branch whose
+pull requests do not change those paths — the check would be skipped, which
+GitHub treats as satisfied, so it would gate nothing.
 
 ---
 
@@ -300,15 +305,49 @@ feeding Markdown to `bash -n` fails on a perfectly valid file.
 
 ## 5. Applying branch protection
 
-The ruleset in `.github/branch-protection/ruleset.json` is the single most
-important file in the pipeline: it is what makes everything above *mandatory*
-rather than advisory.
+The rulesets in `.github/branch-protection/` are the most important
+configuration in the pipeline: they are what make everything above *mandatory*
+rather than advisory. There are four of them, plus one opt-in.
+
+Why more than one: a ruleset carries a single target (`branch` or `tag`) and a
+single `name`, so a tag rule and a branch rule cannot live in the same file.
+Layering is also how GitHub intends the feature to be used — every ruleset whose
+conditions match a ref is enforced, and the most restrictive combination wins.
+Splitting them keeps each file readable and lets one be switched off (set
+`"enforcement": "disabled"`) without touching the others.
+
+| File | Name | Target | Enforces |
+|---|---|---|---|
+| `rulesets/protect-main.json` | Protect main | default branch | the full merge gate — see §5.1 |
+| `rulesets/protect-release-branches.json` | Protect release branches | `release/**`, `hotfix/**`, `support/**` | no force-push, no deletion, reviewed PRs — §5.2 |
+| `rulesets/protect-tags.json` | Protect release tags | `refs/tags/v*` | no deletion, no force-push, no re-pointing, semver names — §5.3 |
+| `rulesets/branch-naming.json` | Branch naming | all branches except bots/main/release | `<type>/<description>` names — §5.4 |
+| `optional/require-signed-commits.json` | Require signed commits | default branch | **opt-in**, not applied by default — §5.5 |
 
 ```bash
-bash .github/branch-protection/apply.sh --dry-run   # inspect first
-bash .github/branch-protection/apply.sh             # apply
-bash .github/branch-protection/apply.sh --remove    # remove
+bash .github/branch-protection/apply.sh --list      # what exists vs. what is defined
+bash .github/branch-protection/apply.sh --dry-run   # inspect the exact payloads first
+bash .github/branch-protection/apply.sh             # apply all four
+bash .github/branch-protection/apply.sh --remove    # remove the managed rulesets
+
+# a single file, including the opt-in one
+bash .github/branch-protection/apply.sh --file rulesets/protect-tags.json
+bash .github/branch-protection/apply.sh --file optional/require-signed-commits.json
+bash .github/branch-protection/apply.sh --remove --file optional/require-signed-commits.json
 ```
+
+`apply.sh` validates every payload before it makes a single API call, writes
+the API body to a gitignored `*.payload.json` (documentation keys starting with
+`_` are stripped), and matches existing rulesets by `name` — so it is
+idempotent, and renaming a *file* is safe while renaming a *ruleset* leaves the
+old one behind (that is what `--remove` before `--apply` is for).
+
+The payloads are also checked by `scripts/checks/check-rulesets.sh`, which runs
+in `Repository Hygiene` and in the local gate. It fails on an unknown rule type,
+a missing required parameter, an invalid regex, two files claiming the same
+ruleset name — and, most importantly, on a required status check that names a
+job no workflow emits, because that check could never report and the branch
+would be permanently unmergeable.
 
 **This cannot be done with a GitHub App installation token.** `apply.sh`
 probes for write access before it touches anything and prints the diagnosis,
@@ -324,16 +363,16 @@ configuration is what has to carry the permission. Three ways forward:
 |---|---|---|
 | **A** | Org Settings → Developer settings → GitHub Apps → *your app* → Permissions & events → Repository permissions → **Administration: Read and write** → Save → an org owner approves | **Yes** |
 | **B** | `gh auth logout && gh auth login` with a classic PAT carrying the `repo` scope, then re-run `apply.sh` | No, one-shot |
-| **C** | Settings → Rules → Rulesets → New ruleset → **Import a ruleset**, paste `.github/branch-protection/ruleset.json` | No, one-shot |
+| **C** | Settings → Rules → Rulesets → New ruleset → **Import a ruleset**, one paste per file in `rulesets/` | No, one-shot |
 
 Option A is the only one that lets a workflow or future automation change the
-ruleset on its own.
+rulesets on its own.
 
-Everything else in the pipeline works without this step. The ruleset is what
-makes the checks *mandatory*; until it is applied, a contributor with push
+Everything else in the pipeline works without this step. The rulesets are what
+make the checks *mandatory*; until they are applied, a contributor with push
 access can still commit straight to `main` and merge a red build.
 
-What it enforces:
+### 5.1 `protect-main.json` — the merge gate
 
 | Rule | Why |
 |---|---|
@@ -348,23 +387,131 @@ What it enforces:
 | Squash merge only | matches the Conventional Commit title rule |
 | Branches up to date before merging | prevents merging something that was never tested against current `main` |
 | Required status checks | the five in §3 |
-| Commits must be signed | every commit is attributable to a real person — **optional, see below** |
-
-`required_signatures` is **not** in the shipped ruleset. It is good practice,
-but it requires every contributor to configure GPG or SSH commit signing, which
-is a genuine barrier to a student's first open-source contribution. The ruleset
-file documents exactly how to add it once the core team is signing.
 
 `require_code_owner_review` is why `.github/CODEOWNERS` lists individual
 `@usernames` instead of `@Open-Source-Software-Club/*` teams: a CODEOWNERS entry
 that names a team which does not exist matches nothing, which would make the
 requirement permanently unsatisfiable and block every merge.
 
-> **Note on bypass actors:** the ruleset ships with an empty bypass list, which
-> is deliberate. Even repository administrators are bound by it. An
+> **Note on bypass actors:** every ruleset ships with an empty bypass list,
+> which is deliberate. Even repository administrators are bound by it. An
 > administrator who genuinely needs to push to `main` (an incident, a botched
-> migration) can add a temporary bypass actor, but `.github/workflows/protect-main.yml`
-> will raise an incident issue when they do, so the bypass is never silent.
+> migration) can add a temporary bypass actor, but
+> `.github/workflows/protect-main.yml` will raise an incident issue when they do,
+> so the bypass is never silent.
+
+### 5.2 `protect-release-branches.json` — the release trains
+
+`release/**`, `hotfix/**` and `support/**` are the branch families that
+`check-branch-name.sh` and `CONTRIBUTING.md` already recognise. They have the
+same problem as `main`: cut once, built against for weeks, and they must not move
+under the feet of whoever is testing them.
+
+| Rule | Why |
+|---|---|
+| No deletion | it removes the evidence of what was shipped |
+| No force-push | it silently changes what was shipped |
+| Pull request + 1 approval | a release train is still reviewed work |
+| Squash **or** merge | a backport that must also land on `main` legitimately needs a merge commit, so linear history is deliberately *not* required here |
+
+There are **no required status checks** on this ruleset, on purpose. Every
+workflow in the repository is triggered by pull requests that target `main`
+(`pull_request: branches: [main]`), so those contexts never report on a PR
+targeting `release/1.2` — requiring them would make the branch permanently
+unmergeable. If release branches ever get their own CI trigger, add the
+contexts and re-run `apply.sh`.
+
+### 5.3 `protect-tags.json` — release tags are immutable
+
+A tag is what an artifact claims to be. If `v1.0.0` can be moved after the fact,
+it stops meaning "the commit we reviewed and shipped", and every downstream
+consumer — a container image, a Vercel build, a fork pinned to a release — is
+trusting a mutable pointer.
+
+| Rule | Why |
+|---|---|
+| No deletion | the tag is the only durable pointer to a shipped commit |
+| No force-push | a force-pushed tag silently rewrites history |
+| `update` blocked | an existing tag cannot be re-pointed at a different commit |
+| `tag_name_pattern` | only `v<major>.<minor>.<patch>[-prerelease]`; `v1`, `v1.2` and `latest` are rejected, because `CHANGELOG.md` promises semver |
+
+Prereleases are cut as `v1.2.0-rc.1`. Creating a tag is *not* restricted — the
+Release Drafter publish step and a maintainer's `git push --tags` both need it.
+
+### 5.4 `branch-naming.json` — the convention, enforced by the server
+
+This is the remote half of `scripts/checks/check-branch-name.sh`. Until it
+existed, the convention was enforced exactly as well as each contributor's
+`bash scripts/install-hooks.sh` — that is, not at all for anyone who skipped the
+hook or used the web UI.
+
+The rule is `branch_name_pattern` with the same regex the local script uses:
+`<type>/<description>` where type is one of the Conventional Commit types, and
+the description is lowercase. `dependabot/**`, `arena/**`, `renovate/**` and the
+other automation prefixes are excluded, as are `main`, `master` and the release
+trains. **A new bot needs its prefix added to `exclude`**, or its pushes are
+rejected.
+
+This is the most opinionated ruleset in the set, because it *rejects a push* and
+GitHub's error message is not friendly. If the friction is ever judged too high
+for a first-time contributor, set `"enforcement": "disabled"` in the file and
+re-run `apply.sh` — do not delete the file, or the decision disappears from the
+history.
+
+### 5.5 Signed commits — opt-in, and why
+
+`required_signatures` is **not** in the default set. It is good practice, but it
+requires every contributor to configure GPG or SSH commit signing, which is a
+genuine barrier to a student's first open-source contribution. It ships as
+`optional/require-signed-commits.json` so a team that has decided to sign can
+turn it on with one command:
+
+```bash
+bash .github/branch-protection/apply.sh --file optional/require-signed-commits.json
+```
+
+The file's header documents the prerequisites (key configuration, how to check
+the existing history with `git log --format='%h %G? %s'`, and the fact that a
+squash merge is signed by GitHub rather than the author, so squash merging keeps
+working).
+
+### 5.6 Not yet possible: push rulesets
+
+Push rulesets block pushes by file path, extension, size and path length across a
+repository and its whole fork network — the server-side equivalent of
+`check-large-files.sh` and `check-forbidden-files.sh`, and strictly better,
+because a fork cannot bypass it.
+
+They require the **GitHub Team plan** for private and internal repositories.
+This repository is public, but the plan is Free, so they are not part of the
+default set. When the club upgrades, create `rulesets/push-rules.json` with this
+body and add it to the loop in `apply.sh`:
+
+```json
+{
+  "name": "Push rules",
+  "target": "push",
+  "enforcement": "active",
+  "conditions": null,
+  "rules": [
+    { "type": "max_file_size",
+      "parameters": { "max_file_size": 1 } },
+    { "type": "file_extension_restriction",
+      "parameters": { "restricted_file_extensions": [
+        "*.zip", "*.tar.gz", "*.jar", "*.exe", "*.dmg", "*.iso",
+        "*.pem", "*.key", "*.p12", "*.pfx", "*.keystore"
+      ] } },
+    { "type": "max_file_path_length",
+      "parameters": { "max_file_path_length": 200 } }
+  ],
+  "bypass_actors": []
+}
+```
+
+`max_file_size` is in **megabytes**, so `1` matches the 1 MiB limit in
+`check-large-files.sh`. Push rules have no bypass for ordinary contributors and
+apply to every fork, so roll them out with `"enforcement": "disabled"` first if
+the team wants to read the rule insights before anything is rejected.
 
 ---
 
@@ -559,8 +706,10 @@ step failed. The binary is fetched with `curl`, pinned by version, and run with
 2. Call it from `scripts/checks/run-all.sh` (local) and from the appropriate job
    in `.github/workflows/` (CI).
 3. If it must block merges, make it run unconditionally and give it a stable
-   `name:`, then add that name to `.github/branch-protection/ruleset.json` and
-   re-run `apply.sh`.
+   `name:`, then add that name to the `required_status_checks` list in
+   `.github/branch-protection/rulesets/protect-main.json` and re-run
+   `apply.sh`. `check-rulesets.sh` fails the build if the context does not
+   match a job name, so the typo never reaches GitHub.
 
 **Adding a new workflow**
 
@@ -616,15 +765,20 @@ Three rules that are not negotiable:
   push; the workflow is what tells you it happened.
 - **The `accessibility` job is advisory.** Lighthouse in CI is a rough proxy; the
   roadmap still requires a manual NVDA/VoiceOver pass before launch.
-- **Branch protection still needs one human action.** The ruleset is written,
-  validated and proven — every one of the five required checks passes on PR
-  #13 — but it cannot be applied from an automation token. GitHub App
-  installation tokens get `Resource not accessible by integration` on the
-  rulesets API even with admin permission on the repository. Somebody has to
-  run `apply.sh` with a personal access token, or import `ruleset.json` through
-  Settings → Rules → Rulesets. Until then the gate is advisory: CI reports, but
-  nothing prevents a push to `main`.
-- **`required_signatures` is off by default.** See §5.
+- **Branch protection still needs one human action.** All five rulesets are
+  written, validated by `check-rulesets.sh`, and ready — but they cannot be
+  applied from an automation token. GitHub App installation tokens get
+  `Resource not accessible by integration` on the rulesets API even with admin
+  permission on the repository. Somebody has to run `apply.sh` with a personal
+  access token, or import each file through Settings → Rules → Rulesets. Until
+  then the gate is advisory: CI reports, but nothing prevents a push to `main`.
+- **`required_signatures` is off by default**, and ships as an opt-in file
+  (`optional/require-signed-commits.json`). See §5.5.
+- **Push rulesets are not applied.** They need the GitHub Team plan; the exact
+  payload to add when the club upgrades is in §5.6.
+- **The branch-naming ruleset rejects a push rather than explaining it.** The
+  local hook and CONTRIBUTING.md remain the primary teacher; the ruleset is the
+  backstop for contributors who never installed the hook. See §5.4.
 - **`@Open-Source-Software-Club/*` teams do not exist yet**, so CODEOWNERS uses
   individual usernames. Switching to teams is a one-line-per-section change,
   documented in the CODEOWNERS header.

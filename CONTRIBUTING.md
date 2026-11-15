@@ -147,6 +147,16 @@ Use descriptive names prefixed with the contribution category:
 - `refactor/supabase-client-utils` — Code structure improvements without behavior changes
 - `test/events-filter` — Adding or improving tests
 
+The permitted prefixes are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`,
+`test`, `build`, `ci`, `chore` and `revert`, and the description is lowercase
+with `-`, `_` or `.` as separators.
+
+This is not only a local convention: a **`Branch naming` ruleset rejects a push**
+from a branch that does not match, so you will find out either way. The git hook
+tells you *how* to fix it; the ruleset is the backstop. Automation branches
+(`dependabot/`, `arena/`, `renovate/`, …), `main` and the `release/`, `hotfix/`
+and `support/` trains are exempt.
+
 ---
 
 ## 📐 Coding Conventions & Architecture
@@ -397,6 +407,8 @@ If this is your first time contributing to an open-source project on GitHub, fol
 ## ⚠️ Common Pitfalls to Avoid
 
 - **Submitting PRs directly to `main` branch:** Always branch out from an updated `main`. The `pre-push` hook refuses it, and branch protection refuses it.
+- **Force-pushing a shared branch:** `release/**`, `hotfix/**`, `support/**` and the release tags are protected server-side. On your own feature branch a force-push is fine; on anything shared it silently rewrites history someone else may already be building on.
+- **Re-tagging a release:** `Protect release tags` blocks deleting or moving a `v*` tag, and only accepts `v<major>.<minor>.<patch>[-prerelease]`. If a release is wrong, cut the next patch — do not move the tag.
 - **Committing lockfiles from other tools:** Never commit `package-lock.json` or `yarn.lock`. Only `pnpm-lock.yaml` should exist.
 - **Pushing `.env.local` or sensitive secrets:** Never commit API keys or private tokens. The pre-commit hook and the `Secret Scan` CI check both block this, and GitHub push protection blocks it before it even reaches the repository.
 - **Creating giant monolithic PRs:** Keep PRs atomic and focused on a single issue. A PR that fixes three different bugs and redesigns two pages is difficult to review and will likely be rejected — and above 4000 changed lines it is rejected automatically by the PR Conventions check.

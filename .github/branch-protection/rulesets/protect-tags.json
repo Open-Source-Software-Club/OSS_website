@@ -1,0 +1,56 @@
+{
+  "_comment": [
+    "Ruleset 3 of 5 — Tag protection for releases.",
+    "",
+    "Applies to refs/tags/v* — the tags .github/release-drafter.yml creates when",
+    "a maintainer publishes a draft release.",
+    "",
+    "WHY THIS MATTERS MORE THAN IT LOOKS",
+    "  A tag is what an artifact claims to be. If a tag can be moved or re-pushed",
+    "  after the fact, then 'v1.0.0' stops meaning 'the commit we reviewed and",
+    "  shipped' and any downstream consumer — a Docker image, a Vercel build, a",
+    "  student's fork pinned to a release — is trusting a mutable pointer.",
+    "",
+    "  deletion      — a deleted release tag removes the only durable pointer to",
+    "                  a shipped commit.",
+    "  non_fast_forward — a force-pushed tag silently rewrites history.",
+    "  update        — re-pointing an existing tag at a different commit.",
+    "  tag_name_pattern — only v<major>.<minor>.<patch>[-prerelease] is allowed,",
+    "                  so 'v1', 'v1.2' and 'latest' cannot be published by",
+    "                  accident. Semver is what CHANGELOG.md promises.",
+    "",
+    "Note: the pattern applies to tags matched by the conditions below (v*), so",
+    "a tag such as 'v1' is now rejected at push time rather than being created",
+    "and forgotten. Cut prereleases as v1.2.0-rc.1."
+  ],
+  "name": "Protect release tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "update"
+    },
+    {
+      "type": "tag_name_pattern",
+      "parameters": {
+        "operator": "regex",
+        "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+      }
+    }
+  ],
+  "bypass_actors": []
+}
