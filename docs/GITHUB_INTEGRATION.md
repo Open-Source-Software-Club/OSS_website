@@ -1,7 +1,7 @@
 # GitHub Integration
 
 > §6 of the OSS Club Website PRD
-> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./ARCHITECTURE.md) · [DATABASE_SCHEMA](./DATABASE_SCHEMA.md)
+> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./architecture.md) · [DATABASE_SCHEMA](./DATABASE_SCHEMA.md)
 
 ---
 

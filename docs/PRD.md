@@ -2,7 +2,7 @@
 
 > **Document owner:** Open Source Software Club, Sai Vidya Institute of Technology, Bengaluru
 > **Repository:** [Open-Source-Software-Club/OSS_website](https://github.com/Open-Source-Software-Club/OSS_website)
-> **Related docs:** [ARCHITECTURE](./ARCHITECTURE.md) · [DATABASE_SCHEMA](./DATABASE_SCHEMA.md) · [GITHUB_INTEGRATION](./GITHUB_INTEGRATION.md) · [UI_UX_SPECIFICATION](./UI_UX_SPECIFICATION.md) · [DEVELOPMENT_ROADMAP](./DEVELOPMENT_ROADMAP.md) · [GITHUB_WORKFLOW](./GITHUB_WORKFLOW.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
+> **Related docs:** [ARCHITECTURE](./architecture.md) · [DATABASE_SCHEMA](./DATABASE_SCHEMA.md) · [GITHUB_INTEGRATION](./GITHUB_INTEGRATION.md) · [UI_UX_SPECIFICATION](./UI_UX_SPECIFICATION.md) · [DEVELOPMENT_ROADMAP](./DEVELOPMENT_ROADMAP.md) · [GITHUB_WORKFLOW](./GITHUB_WORKFLOW.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
 
 ---
 

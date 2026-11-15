@@ -1,0 +1,150 @@
+# ==============================================================================
+# Workflow security — static analysis of the pipeline itself
+#
+# Docs: docs/CI_CD.md §4.9
+#
+# The repository gate (`scripts/checks/`) polices the code that gets committed.
+# Nothing policed the workflows that do the policing: YAML that runs with a
+# write token, embeds a contributor-controlled string in a shell command, or
+# checks out a fork's code inside `pull_request_target`.
+#
+# zizmor reads .github/workflows/ as an attacker would. Its audits map one-to-one
+# onto the risks this project actually has:
+#
+#   template-injection   a PR title, branch name or issue body expanded into a
+#                        `run:` block — the defect docs/CI_CD.md §10 warns about
+#   dangerous-triggers   `pull_request_target` / `workflow_run` used in a way
+#                        that hands a write token to untrusted code
+#   artipacked           the checkout credential left in .git/config and then
+#                        shipped inside an uploaded artifact
+#   excessive-permissions  a workflow-wide write scope where a job-level read
+#                        would do
+#   unpinned-uses        an action referenced by a moving ref (see the policy in
+#                        .github/zizmor.yml)
+#   hardcoded-container-credentials, cache-poisoning, self-hosted-runner, …
+#
+# A clean run is the proof that the pipeline still obeys its own rules. When it
+# fails it names the file, the line and the audit, so the fix is a lookup rather
+# than an investigation.
+# ==============================================================================
+
+name: Workflow Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly: the audit rules improve over time and a workflow that was clean
+    # against last month's zizmor may not be clean against this month's.
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: workflow-security-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Pinned deliberately. zizmor is a young tool with a fast-moving rule set; an
+  # unpinned version would turn "a new audit found something interesting" into
+  # "the pipeline broke overnight". Bump it in its own pull request.
+  ZIZMOR_VERSION: '1.32.0'
+
+jobs:
+  zizmor:
+    name: Workflow Security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Uploading the SARIF report to the Security tab.
+      security-events: write
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Verify a configuration exists
+        run: |
+          if [ ! -f .github/zizmor.yml ]; then
+            echo "::error::.github/zizmor.yml is missing. It records the deliberate policy decisions (which actions may be tag-pinned, which dangerous trigger is reviewed and accepted) and without it zizmor's defaults would fail on them."
+            exit 1
+          fi
+
+      # pipx ships with the ubuntu runner image; it installs into an isolated
+      # environment so a broken transitive dependency of some other tool cannot
+      # affect this one. The --break-system-packages fallback exists because
+      # pipx has been absent from a runner image before.
+      - name: Install zizmor
+        run: |
+          if command -v pipx >/dev/null 2>&1; then
+            pipx install "zizmor==${ZIZMOR_VERSION}"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          elif command -v uv >/dev/null 2>&1; then
+            uv tool install "zizmor==${ZIZMOR_VERSION}"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            python3 -m pip install --user --break-system-packages "zizmor==${ZIZMOR_VERSION}"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+          "$HOME/.local/bin/zizmor" --version
+
+      - name: Audit the workflows
+        id: audit
+        run: |
+          set +e
+          zizmor --config .github/zizmor.yml --format plain .github/workflows > /tmp/zizmor.txt 2>&1
+          rc=$?
+          set -e
+
+          cat /tmp/zizmor.txt
+
+          # Re-emit every finding as an annotation so the failure is visible on
+          # the pull request diff instead of only in the raw log.
+          grep -E '^(error|warning)\[' /tmp/zizmor.txt | head -200 | while IFS= read -r line; do
+            echo "::error title=zizmor::$line"
+          done
+
+          {
+            echo '### zizmor workflow audit'
+            echo
+            if [ "$rc" -eq 0 ]; then
+              echo 'No findings.'
+            else
+              echo '```'
+              tail -40 /tmp/zizmor.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::zizmor reported findings. Fix them, or record a deliberate exception in .github/zizmor.yml with the reason."
+          fi
+          exit "$rc"
+
+      # Runs even when the audit failed, so the Security tab gets the full report
+      # rather than only the console failure.
+      - name: Generate a SARIF report
+        if: always()
+        run: |
+          zizmor --config .github/zizmor.yml --format sarif .github/workflows > zizmor.sarif || true
+          if [ -s zizmor.sarif ] && head -c 1 zizmor.sarif | grep -q '{'; then
+            echo "SARIF report generated."
+          else
+            echo "::notice::No SARIF report was produced; the console output above is authoritative."
+            rm -f zizmor.sarif
+          fi
+
+      - name: Upload results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+        continue-on-error: true

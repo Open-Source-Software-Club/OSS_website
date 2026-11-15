@@ -232,9 +232,11 @@ The project follows the standard Next.js 14 App Router layout:
 OSS_website/
 ├── .github/                      # GitHub workflows, issue templates, PR templates
 │   ├── ISSUE_TEMPLATE/           # Structured bug reports & feature requests
-│   └── workflows/
-│       ├── ci.yml                # Lint, format, typecheck, build validation
-│       └── preview.yml           # Deployment previews
+│   └── workflows/                # CI/CD — see docs/CI_CD.md
+│       ├── ci.yml                # Hygiene, PR conventions, verify, Lighthouse
+│       ├── security.yml          # Secret scan, dependency review
+│       ├── workflow-security.yml # zizmor audit of the workflows themselves
+│       └── ...                   # codeql, scorecard, e2e, db-check, smoke, etc.
 ├── public/                       # Static public assets (images, icons, fonts)
 │   ├── assets/
 │   │   ├── brand/                # Club logos, banners, marks

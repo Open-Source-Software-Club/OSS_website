@@ -24,8 +24,14 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: protect-main
+  cancel-in-progress: false
+
 permissions:
   contents: read
+  # Commits→pulls lookup, used to prove the commit came from a merged PR.
+  pull-requests: read
   issues: write
 
 jobs:
@@ -34,6 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The previous version of this workflow ran `git rev-parse` and `git log`
+      # without cloning anything, so every run saw an empty subject and a parent
+      # count of -1 and raised a false incident. The repository has to be
+      # present before it can be inspected.
+      - name: Checkout the pushed commit with its history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Inspect what reached main
         id: inspect
         env:
@@ -41,16 +57,19 @@ jobs:
         run: |
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-          # The parent of the new HEAD is the previous tip of main.
-          parent="$(git rev-parse "$SHA^" 2>/dev/null || true)"
-          echo "parent=$parent" >> "$GITHUB_OUTPUT"
-
-          # A merge commit has two or more parents. Linear history forbids it.
-          parents="$(git rev-list --parents -n 1 "$SHA" 2>/dev/null | wc -w || echo 0)"
-          echo "parents=$((parents - 1))" >> "$GITHUB_OUTPUT"
+          # A merge commit has two or more parents; linear history forbids it.
+          parents="$(git rev-list --parents -n 1 "$SHA" 2>/dev/null | wc -w | tr -d ' ' || true)"
+          case "$parents" in
+            ''|*[!0-9]*) parents=1 ;;
+          esac
+          echo "parent_count=$((parents - 1))" >> "$GITHUB_OUTPUT"
 
           subject="$(git log -1 --format='%s' "$SHA" 2>/dev/null || true)"
-          echo "subject=$subject" >> "$GITHUB_OUTPUT"
+          {
+            echo 'subject<<PROTECT_MAIN_SUBJECT'
+            printf '%s\n' "$subject"
+            echo 'PROTECT_MAIN_SUBJECT'
+          } >> "$GITHUB_OUTPUT"
 
           if printf '%s' "$subject" | grep -Eq '\(#[0-9]+\)$'; then
             echo "squashed=true" >> "$GITHUB_OUTPUT"
@@ -67,6 +86,9 @@ jobs:
           # A squash-merged PR commit is reachable from a closed, merged PR.
           count="$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" \
                      --jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo 0)"
+          case "$count" in
+            ''|*[!0-9]*) count=0 ;;
+          esac
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Report a clean merge
@@ -76,12 +98,24 @@ jobs:
 
       - name: Raise an incident for an unverified push
         if: steps.inspect.outputs.squashed != 'true' || steps.pr.outputs.count == '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
+        env:
+          # Untrusted text reaches JavaScript through the environment, never
+          # through `${{ }}` inside the script body: a commit subject such as
+          #   `"; process.exit(0); //`
+          # would otherwise be executed as code.
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SUBJECT: ${{ steps.inspect.outputs.subject }}
+          PARENT_COUNT: ${{ steps.inspect.outputs.parent_count }}
+          IS_SQUASHED: ${{ steps.inspect.outputs.squashed }}
+          PR_COUNT: ${{ steps.pr.outputs.count }}
         with:
           script: |
-            const sha = context.sha;
-            const subject = `${{ steps.inspect.outputs.subject }}`;
-            const parents = ${{ steps.inspect.outputs.parents }};
+            const sha = process.env.COMMIT_SHA;
+            const subject = process.env.COMMIT_SUBJECT || '(no subject)';
+            const parents = Number.parseInt(process.env.PARENT_COUNT || '0', 10);
+            const squashed = process.env.IS_SQUASHED === 'true';
+            const prCount = Number.parseInt(process.env.PR_COUNT || '0', 10);
             const actor = context.actor;
 
             const body = [
@@ -94,8 +128,10 @@ jobs:
               '| Detail | Value |',
               '|---|---|',
               `| Commit | \`${sha}\` |`,
-              `| Subject | ${subject} |`,
-              `| Parents | ${parents} |`,
+              `| Subject | ${subject.replace(/\|/g, '\\|')} |`,
+              `| Parents | ${parents} (a squash merge has 1, a merge commit 2+) |`,
+              `| Ends in "(#N)" | ${squashed} |`,
+              `| Merged PRs found | ${prCount} |`,
               `| Actor | @${actor} |`,
               `| Workflow run | [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |`,
               '',

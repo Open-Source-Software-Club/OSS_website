@@ -66,6 +66,7 @@ run_check "lockfile policy"  bash "$CHECKS_DIR/check-lockfiles.sh"
 run_check "secret scan"      bash "$CHECKS_DIR/check-secrets.sh" "${SECRET_ARGS[@]}"
 run_check "large files"      bash "$CHECKS_DIR/check-large-files.sh" "${STAGED_ARGS[@]}"
 run_check "text hygiene"     bash "$CHECKS_DIR/check-text-hygiene.sh" "${STAGED_ARGS[@]}"
+run_check "documentation"    bash "$CHECKS_DIR/check-docs.sh" "${STAGED_ARGS[@]}"
 
 if [ "$FAST" -eq 0 ]; then
   run_check "branch name"     bash "$CHECKS_DIR/check-branch-name.sh"

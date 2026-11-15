@@ -89,7 +89,7 @@ Closes #
 
 ## Checklist
 
-- [ ] My code follows the project's coding conventions in [CONTRIBUTING.md](CONTRIBUTING.md)
+- [ ] My code follows the project's coding conventions in [CONTRIBUTING.md](../CONTRIBUTING.md)
 - [ ] I have performed a self-review of my own diff
 - [ ] I have added comments where the code is not self-explanatory
 - [ ] My changes generate no new warnings

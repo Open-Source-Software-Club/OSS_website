@@ -1,7 +1,7 @@
 # UI/UX Specification
 
 > §7 of the OSS Club Website PRD
-> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./ARCHITECTURE.md)
+> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./architecture.md)
 
 ---
 

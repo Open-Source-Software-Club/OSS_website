@@ -39,7 +39,9 @@ jobs:
         language: [javascript-typescript]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Detect application toolchain
         id: detect
@@ -51,19 +53,21 @@ jobs:
             echo "::notice::CodeQL will analyse the application once package.json and pnpm-lock.yaml exist."
           fi
 
+      # v4 is the current major (Node 24 runtime); v3 still works but is on the
+      # Node 20 deprecation path.
       - name: Initialise CodeQL
         if: steps.detect.outputs.app == 'true'
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
 
       - name: Autobuild
         if: steps.detect.outputs.app == 'true'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL analysis
         if: steps.detect.outputs.app == 'true'
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}

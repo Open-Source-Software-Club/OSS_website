@@ -7,7 +7,25 @@
 # filters. Keeping it accurate by hand does not survive a busy semester;
 # deriving it from the paths a pull request touches does.
 #
-# Scoped to `pull-requests: write` and nothing else.
+# WHY `pull_request_target` AND HOW IT IS KEPT SAFE
+#   Labelling needs `pull-requests: write`, which the `pull_request` trigger
+#   only grants to branches in this repository — a fork's pull request would
+#   arrive read-only, and most contributions come from forks. `pull_request_target`
+#   runs in the base repository's context, so the write token is available.
+#
+#   The cost is that a `pull_request_target` workflow with a write token will
+#   happily execute code from the fork if it checks it out. That is the
+#   "pwn request" pattern, and it is the reason this workflow checks out the
+#   BASE commit, never the head:
+#
+#     * `actions/labeler` reads its rules from the repository, and the rules
+#       must come from trusted code — a fork could otherwise label its own pull
+#       request `priority: critical` or teach the labeler to do anything.
+#     * no `npm install`, no build, no script from the pull request is executed.
+#
+#   `docs/CI_CD.md` §10 states the rule this workflow follows: untrusted values
+#   are never interpolated into a `run:` block, and untrusted code is never run
+#   with a write token.
 # ==============================================================================
 
 name: PR Automation
@@ -16,6 +34,10 @@ on:
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: pr-automation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -27,21 +49,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout the pull-request head
-        uses: actions/checkout@v4
+      - name: Checkout the base commit (never the pull-request head)
+        uses: actions/checkout@v5
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+          # `github.event.pull_request.base.sha` is a commit of this repository,
+          # reviewed and merged already. The head SHA belongs to the contributor.
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
 
       - name: Validate the labeler configuration
         run: |
+          if [ ! -f .github/labeler.yml ]; then
+            echo "::error::.github/labeler.yml is missing, so no labels can be applied from the diff."
+            exit 1
+          fi
+          if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+            echo "::notice::PyYAML is not available; skipping labeler.yml validation."
+            exit 0
+          fi
           python3 - <<'PY'
           import sys, yaml
           try:
               cfg = yaml.safe_load(open('.github/labeler.yml', encoding='utf-8'))
-          except FileNotFoundError:
-              print('.github/labeler.yml is missing; skipping validation.')
-              sys.exit(0)
           except yaml.YAMLError as exc:
               print(f'::error::.github/labeler.yml is not valid YAML: {exc}')
               sys.exit(1)
@@ -52,7 +81,7 @@ jobs:
           PY
 
       - name: Apply labels
-        uses: actions/labeler@v5
+        uses: actions/labeler@v7
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml

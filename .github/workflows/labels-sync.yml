@@ -12,7 +12,7 @@
 # beginner filter, so the taxonomy is enforced from .github/labels.yml rather
 # than trusted to memory.
 #
-# Runs weekly, and can be triggered manually by a maintainer.
+# Runs weekly, when the taxonomy changes, and on demand.
 # ==============================================================================
 
 name: Labels Sync
@@ -26,6 +26,10 @@ on:
         description: 'Sync to every repository in the organisation, not just this one'
         type: boolean
         default: false
+      dry_run:
+        description: 'Validate the taxonomy but do not change any label'
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/labels.yml'
@@ -35,24 +39,36 @@ concurrency:
   group: labels-sync
   cancel-in-progress: false
 
+# Least privilege at the workflow level; each job widens only what it needs.
 permissions:
   contents: read
-  issues: write
 
 jobs:
   sync-this-repository:
     name: Sync labels (this repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Validate the label taxonomy
         run: |
-          # Catch taxonomy mistakes before they are pushed to GitHub.
+          # Catch taxonomy mistakes before they are pushed to GitHub. A duplicate
+          # name, an invalid colour or a missing description is a data error that
+          # the sync would otherwise either reject with an opaque API error or
+          # silently apply as a different label.
           if [ ! -f .github/labels.yml ]; then
             echo "::error::.github/labels.yml is missing."
+            exit 1
+          fi
+          if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+            echo "::error::PyYAML is not available on this runner, so the label taxonomy cannot be validated. Install it with 'pip install pyyaml' or restore the runner image."
             exit 1
           fi
           python3 - <<'PY'
@@ -88,36 +104,100 @@ jobs:
           # labels are not all in the taxonomy yet, and silently deleting a
           # label somebody is filtering by is a nasty surprise.
           delete-other-labels: false
-          dry-run: false
+          dry-run: ${{ inputs.dry_run || false }}
 
   sync-organisation:
     name: Sync labels (all organisation repositories)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.all_org_repos
-    timeout-minutes: 20
+    permissions:
+      contents: read
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
-      - name: Apply labels across the organisation
+      # EndBug/label-sync is a GitHub Action, not a CLI on npm: `npx label-sync`
+      # resolves to an unrelated package (or to nothing), which is why this job
+      # used to fail with a confusing module error. The loop below uses the
+      # GitHub API directly through `gh`, which is already on the runner.
+      - name: Sync the taxonomy to every repository in the organisation
         env:
-          # A fine-grained PAT with repository "Administration: write" on every
-          # repository in the organisation. Optional — when unset, this job is
-          # skipped rather than failing.
-          SYNC_TOKEN: ${{ secrets.ORG_LABELS_SYNC_TOKEN }}
+          # A fine-grained PAT with repository "Administration: write" (or
+          # "Issues: write") on every repository in the organisation. Optional —
+          # when unset, the job reports a notice instead of failing.
+          GH_TOKEN: ${{ secrets.ORG_LABELS_SYNC_TOKEN }}
           ORG: ${{ github.repository_owner }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
         run: |
-          if [ -z "$SYNC_TOKEN" ]; then
-            echo "::warning::ORG_LABELS_SYNC_TOKEN is not configured — skipping the organisation-wide sync."
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::ORG_LABELS_SYNC_TOKEN is not configured, so the organisation-wide sync is idle. Create a fine-grained PAT and add it as a repository secret to enable it."
             exit 0
           fi
+
+          # One JSON object per line: the taxonomy is the single source of truth
+          # and this is the only place it is turned into API calls.
+          python3 - > /tmp/labels.jsonl <<'PY'
+          import json, yaml
+          for entry in yaml.safe_load(open('.github/labels.yml', encoding='utf-8')):
+              record = {
+                  'name': entry['name'],
+                  'color': str(entry['color']).lstrip('#'),
+                  'description': entry.get('description', ''),
+              }
+              print(json.dumps(record))
+          PY
+
+          echo "Taxonomy: $(wc -l < /tmp/labels.jsonl | tr -d ' ') label(s)"
+
           repos="$(gh repo list "$ORG" --limit 200 --json nameWithOwner --jq '.[].nameWithOwner')"
+          if [ -z "$repos" ]; then
+            echo "::error::'gh repo list $ORG' returned no repositories. Check the token's organisation membership and 'Administration: read' permission."
+            exit 1
+          fi
+
           failed=0
           for repo in $repos; do
-            echo "Syncing labels to $repo"
-            if ! npx --yes label-sync --config-file .github/labels.yml --repo "$repo" --token "$SYNC_TOKEN"; then
-              echo "::warning::Failed to sync labels to $repo"
-              failed=1
-            fi
+            echo "::group::$repo"
+            created=0; updated=0; skipped=0
+            while IFS= read -r entry; do
+              name="$(printf '%s' "$entry" | jq -r '.name')"
+              colour="$(printf '%s' "$entry" | jq -r '.color')"
+              desc="$(printf '%s' "$entry" | jq -r '.description')"
+              encoded="$(printf '%s' "$name" | jq -sRr @uri)"
+
+              if gh api "repos/$repo/labels/$encoded" >/dev/null 2>&1; then
+                if [ "$DRY_RUN" = 'true' ]; then
+                  skipped=$((skipped + 1)); continue
+                fi
+                if gh api -X PATCH "repos/$repo/labels/$encoded" \
+                     -f "new_name=$name" -f "color=$colour" -f "description=$desc" >/dev/null; then
+                  updated=$((updated + 1))
+                else
+                  echo "::warning::Could not update '$name' in $repo"
+                  failed=1
+                fi
+              else
+                if [ "$DRY_RUN" = 'true' ]; then
+                  skipped=$((skipped + 1)); continue
+                fi
+                if gh api -X POST "repos/$repo/labels" \
+                     -f "name=$name" -f "color=$colour" -f "description=$desc" >/dev/null; then
+                  created=$((created + 1))
+                else
+                  echo "::warning::Could not create '$name' in $repo"
+                  failed=1
+                fi
+              fi
+            done < /tmp/labels.jsonl
+            echo "created=$created updated=$updated skipped=$skipped"
+            echo "::endgroup::"
           done
-          exit "$failed"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::At least one repository could not be synchronised. See the warnings above."
+            exit 1
+          fi
+          echo "Label taxonomy synchronised to every repository in $ORG."

@@ -1,0 +1,107 @@
+# ==============================================================================
+# .github/release-drafter.yml
+#
+# Release note configuration for .github/workflows/release-drafter.yml.
+#
+# Categories are keyed on the labels applied by .github/labeler.yml and
+# .github/labels.yml, with a title-prefix fallback so a pull request that landed
+# without a label still appears under the right heading instead of in
+# "Other Changes".
+#
+# The shape of the output follows CHANGELOG.md (Keep a Changelog), so a release
+# note can be pasted straight into it.
+#
+# Docs: docs/CI_CD.md §7.3
+# ==============================================================================
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+# Every label named here must exist in .github/labels.yml — a label that does
+# not exist simply never matches, and the pull request falls through to
+# "Other Changes". Duplicates and rejections do not belong in a changelog;
+# a labelled-as-stale pull request was not merged at all.
+exclude-labels:
+  - 'duplicate'
+  - 'invalid'
+  - 'wontfix'
+  - 'stale'
+
+change-template: '- $TITLE ([#$NUMBER]($URL)) — thanks @$AUTHOR'
+change-title-escapes: '\<*_&'
+no-changes-template: '- No changes since the previous release.'
+
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'type: feature'
+      - 'enhancement'
+    collapse-after: 12
+
+  - title: '🐛 Fixes'
+    labels:
+      - 'type: bug'
+      - 'bug'
+
+  - title: '🔒 Security'
+    labels:
+      - 'security'
+      - 'area: security'
+
+  - title: '🎨 Design and accessibility'
+    labels:
+      - 'area: design'
+
+  - title: '📝 Documentation'
+    labels:
+      - 'area: docs'
+      - 'documentation'
+      - 'type: docs'
+
+  - title: '🧪 Testing'
+    labels:
+      - 'area: testing'
+
+  - title: '🏗️ Build, CI and tooling'
+    labels:
+      - 'github_actions'
+      - 'area: devops'
+
+  - title: '♻️ Refactoring'
+    labels:
+      - 'type: refactor'
+
+  - title: '⬆️ Dependencies'
+    labels:
+      - 'dependencies'
+      - 'type: maintenance'
+    collapse-after: 8
+
+  # No `labels` key: this is the catch-all, so it has to come last.
+  - title: 'Other changes'
+
+# The version resolver reads the same taxonomy. There is deliberately no `major`
+# rule: this project is 0.x, a breaking change is a decision a maintainer makes
+# while editing the draft, and a label is too easy to apply by mistake for
+# something as irreversible as a major version bump.
+version-resolver:
+  minor:
+    labels:
+      - 'type: feature'
+      - 'enhancement'
+  patch:
+    labels:
+      - 'type: bug'
+      - 'bug'
+  default: patch
+
+template: |
+  ## What changed
+
+  $CHANGES
+
+  **Full changelog:** https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+  ---
+
+  Contributions from: $CONTRIBUTORS

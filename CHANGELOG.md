@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Workflow Security` (`workflow-security.yml`): a pinned `zizmor` audit that
+  catches template injection, `pull_request_target` misuse, credential-stuffing
+  of artifacts and unpinned actions in the pipeline itself.
+- `Scorecard` (`scorecard.yml`): OpenSSF supply-chain posture published as SARIF
+  to the Security tab.
+- `Release Drafter` (`release-drafter.yml`): release notes assembled from the
+  Conventional Commit titles that `PR Conventions` already enforces.
+- `Deployment Smoke Test` (`smoke.yml`): verifies that the URL Vercel published
+  actually renders, and reports the deployment's security headers.
+- `scripts/checks/check-docs.sh`: documentation integrity — required documents
+  exist, every relative link resolves, exactly one H1 per document.
+- Shell linting of the pipeline itself (`bash -n` + `shellcheck`) in
+  `Repository Hygiene`.
 - Interactive calendar view for upcoming workshops and hackathons in `src/app/(main)/events`.
 - Supabase Row Level Security (RLS) policies for student project submissions.
 - GitHub API integration to automatically fetch star counts and contributor avatars for featured club repositories.
@@ -19,8 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Refactored `ProjectCard` component to support dynamic language color tags.
 - Optimized hero section animations for low-power mobile devices.
+- Hardened the CI/CD pipeline: GitHub Actions pinned to current Node 24 majors,
+  `supabase/setup-cli@v1` and `actions/dependency-review-action@v4` (both moving
+  branches) replaced with tags, and the Supabase CLI pinned in one place so CI
+  and production migrations run the same binary.
 
 ### Fixed
+- `protect-main.yml` raised a false incident on every push to `main`: it ran `git`
+  commands without ever cloning the repository, and interpolated the commit
+  subject into a `github-script` body.
+- `pr-automation.yml` checked out the pull-request *head* inside a
+  `pull_request_target` workflow, giving fork code a write token.
+- `stale.yml` deleted merged branches with a read-only token, so every delete
+  silently failed with 403.
+- `labels-sync.yml` invoked a `label-sync` CLI that does not exist, and called
+  `gh repo list` without the organisation token.
+- `Verify` treated a *failing* `type-check` the same as a missing one and went
+  green; the script that exists is now resolved before it runs.
+- Six documents linked to `./ARCHITECTURE.md` (the file is
+  `docs/architecture.md`), and the pull-request template linked to a
+  `CONTRIBUTING.md` that resolves relative to `.github/`.
 - Fixed layout shift (CLS) in navigation bar during dark/light theme hydration.
 - Resolved mobile drawer menu failing to trap focus when opened.
 

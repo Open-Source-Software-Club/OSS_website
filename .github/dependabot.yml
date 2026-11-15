@@ -27,7 +27,7 @@ updates:
     target-branch: main
     labels:
       - dependencies
-      - maintenance
+      - 'type: maintenance'
     commit-message:
       prefix: chore
       prefix-separator: ':'
@@ -76,7 +76,7 @@ updates:
     target-branch: main
     labels:
       - github_actions
-      - maintenance
+      - 'type: maintenance'
     commit-message:
       prefix: ci
       prefix-separator: ':'
@@ -98,7 +98,7 @@ updates:
       timezone: 'Asia/Kolkata'
     labels:
       - dependencies
-      - maintenance
+      - 'type: maintenance'
     commit-message:
       prefix: chore
       prefix-separator: ':'

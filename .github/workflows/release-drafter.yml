@@ -1,0 +1,69 @@
+# ==============================================================================
+# Release Drafter — release notes from the pull requests that reached main
+#
+# Docs: docs/CI_CD.md §7.3 · CHANGELOG.md
+#
+# The repository squash-merges, and the pull-request title becomes the commit on
+# main — which is why "PR Conventions" insists on a Conventional Commit header.
+# That convention has a second payoff: the same titles can be assembled into
+# release notes, so cutting a release is editing a draft instead of reading
+# `git log` for an hour.
+#
+# The draft is updated on every push to main and is never published
+# automatically: a human decides the version and presses publish. Nothing here
+# tags, deploys or merges anything.
+# ==============================================================================
+
+name: Release Drafter
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-drafter
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update-release-draft:
+    name: Draft release notes
+    runs-on: ubuntu-latest
+    permissions:
+      # Drafting a release writes a release object; reading merged pull requests
+      # is what the categories are built from.
+      contents: write
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Validate the configuration
+        run: |
+          if [ ! -f .github/release-drafter.yml ]; then
+            echo "::error::.github/release-drafter.yml is missing, so the draft would be generated with Release Drafter's defaults instead of this project's categories."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import sys, yaml
+          try:
+              cfg = yaml.safe_load(open('.github/release-drafter.yml', encoding='utf-8'))
+          except yaml.YAMLError as exc:
+              print(f'::error::.github/release-drafter.yml is not valid YAML: {exc}')
+              sys.exit(1)
+          if not isinstance(cfg, dict) or not cfg.get('categories'):
+              print('::error::.github/release-drafter.yml defines no categories.')
+              sys.exit(1)
+          print(f"release-drafter.yml is valid ({len(cfg['categories'])} categories).")
+          PY
+
+      - name: Update the draft
+        uses: release-drafter/release-drafter@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

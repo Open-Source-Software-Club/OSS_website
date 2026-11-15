@@ -1,7 +1,7 @@
 # Development Roadmap
 
 > §10 of the OSS Club Website PRD
-> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./ARCHITECTURE.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
+> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./architecture.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
 
 ---
 

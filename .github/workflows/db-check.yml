@@ -32,6 +32,12 @@ concurrency:
   group: db-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The one place the database tooling version is declared. CI and the
+  # production migration workflow use the same value, so a migration that
+  # passes here cannot fail on a CLI behaviour difference.
+  SUPABASE_CLI_VERSION: '3.1.0'
+
 permissions:
   contents: read
 
@@ -42,7 +48,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Detect database directory
         id: detect
@@ -54,15 +62,24 @@ jobs:
             echo "::notice::No supabase/ directory yet. Database checks will activate when the first migration lands (Phase 2)."
           fi
 
+      # `@v1` is a *branch* of setup-cli, not a tag — a moving ref that can
+      # change between runs. `@v3` is the current tagged major.
+      #
+      # The CLI version is pinned in one place (env.SUPABASE_CLI_VERSION) so CI
+      # exercises exactly the CLI that db-migrate.yml will use against
+      # production, and so a CLI major release cannot break the pipeline on a
+      # Tuesday morning. Bump it deliberately.
       - name: Setup Supabase CLI
         if: steps.detect.outputs.db == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
 
+      # `supabase db start` only exists on the v3+ CLI; `supabase start` is the
+      # command that has meant "bring up the local stack" in every version.
       - name: Start a local Supabase stack
         if: steps.detect.outputs.db == 'true'
-        run: supabase db start
+        run: supabase start
 
       - name: Reset the database from migrations and seed
         if: steps.detect.outputs.db == 'true'
@@ -99,4 +116,4 @@ jobs:
 
       - name: Stop the local Supabase stack
         if: always() && steps.detect.outputs.db == 'true'
-        run: supabase db stop || true
+        run: supabase stop || true

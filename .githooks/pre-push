@@ -24,10 +24,10 @@ PROTECTED_BRANCHES='^(main|master|develop|staging|production)$'
 # git supplies: <remote> <remote-url> on argv, and refs on stdin as
 # "<local ref> <local sha> <remote ref> <remote sha>".
 REMOTE="${1:-origin}"
-REMOTE_URL="${2:-}"
+# $2 is the remote URL; it is accepted for completeness and deliberately unused.
 
 blocked=0
-while read -r local_ref local_sha remote_ref remote_sha; do
+while read -r local_ref local_sha remote_ref _remote_sha; do
   [ -z "${local_ref:-}" ] && continue
 
   # Deleting a remote branch is a maintainer action; still guard the name.

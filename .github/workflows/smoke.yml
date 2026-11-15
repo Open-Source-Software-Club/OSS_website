@@ -1,0 +1,164 @@
+# ==============================================================================
+# Deployment smoke test — is the thing that Vercel published actually serving?
+#
+# Docs: docs/CI_CD.md §7.2
+#
+# GitHub Actions is the quality gate, Vercel is the deployer (§7), and the gap
+# between those two sentences is this workflow: CI can be green, Vercel can
+# report a successful deployment, and the site can still return a 500 because a
+# Supabase key was rotated or an environment variable was missing from the
+# production scope.
+#
+# It runs on the `deployment_status` event that the Vercel integration sends, so
+# it covers both sides of the deployment pipeline:
+#
+#   * a pull-request preview that cannot render is caught before review
+#   * a production deployment that cannot render is caught in minutes
+#
+# There is no checkout and no code from the repository is executed: this job is
+# a handful of HTTP requests against the URL Vercel already published.
+# ==============================================================================
+
+name: Deployment Smoke Test
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Base URL to smoke test (defaults to the SITE_URL repository variable)'
+        type: string
+        required: false
+
+concurrency:
+  group: smoke-${{ github.event.deployment.id || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  smoke:
+    name: Deployment Smoke Test
+    # Only a successful deployment is worth testing; a failed one has already
+    # been reported by Vercel.
+    if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TARGET_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url || inputs.url || vars.SITE_URL }}
+      DEPLOY_ENV: ${{ github.event.deployment.environment || 'manual' }}
+      DEPLOY_REF: ${{ github.event.deployment.ref || github.ref_name }}
+    steps:
+      - name: Resolve the target URL
+        id: target
+        run: |
+          url="${TARGET_URL%/}"
+          if [ -z "$url" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No deployment URL was supplied (no Vercel integration and no SITE_URL variable), so there is nothing to smoke test yet. This check activates the first time a deployment reports a URL."
+            exit 0
+          fi
+          case "$url" in
+            http://*|https://*) ;;
+            *)
+              echo "::error::'$url' is not an absolute http(s) URL, so it cannot be smoke tested."
+              exit 1
+              ;;
+          esac
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Smoke testing $url (environment: $DEPLOY_ENV, ref: $DEPLOY_REF)"
+
+      - name: Wait for the deployment to answer
+        if: steps.target.outputs.enabled == 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          # A deployment can be marked successful a few seconds before the CDN
+          # finishes propagating, so the first request is allowed to fail.
+          for attempt in 1 2 3 4 5 6; do
+            code="$(curl --silent --show-error --location --max-time 30 \
+                        --output /tmp/body.html --write-out '%{http_code}' \
+                        "$URL/" 2>/tmp/curl.err)" || code=000
+            echo "attempt $attempt → HTTP $code"
+            if [ "$code" = '200' ]; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::The deployment at $URL did not return HTTP 200 after 6 attempts (last: HTTP $code)."
+          echo "--- response body ---"
+          head -40 /tmp/body.html 2>/dev/null || true
+          echo "--- curl diagnostics ---"
+          cat /tmp/curl.err 2>/dev/null || true
+          exit 1
+
+      - name: Assert the page is a rendered document
+        if: steps.target.outputs.enabled == 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          bytes="$(wc -c < /tmp/body.html | tr -d ' ')"
+          echo "Response body: $bytes bytes"
+          if [ "$bytes" -lt 500 ]; then
+            echo "::error::The homepage returned only $bytes bytes. A rendered Next.js page is never that small; this usually means an error boundary, a redirect to a maintenance page, or a missing build."
+            head -40 /tmp/body.html || true
+            exit 1
+          fi
+          if ! grep -qiE '<html|<!doctype html' /tmp/body.html; then
+            echo "::error::The homepage did not return an HTML document."
+            head -40 /tmp/body.html || true
+            exit 1
+          fi
+          if grep -qiE 'Application error|Internal Server Error|__next_error__' /tmp/body.html; then
+            echo "::error::The homepage contains a Next.js error marker."
+            exit 1
+          fi
+          echo "The homepage is a rendered HTML document."
+
+      - name: Report the response headers
+        if: steps.target.outputs.enabled == 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          headers="$(curl --silent --show-error --location --head --max-time 30 "$URL/" || true)"
+          echo "$headers"
+
+          # Security headers are advisory here rather than fatal: they are
+          # configured in the deployment platform, not in this repository, and a
+          # first deploy legitimately has none of them yet. The run summary is
+          # where a missing header becomes visible without blocking a release.
+          {
+            echo "### Deployment smoke test"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| URL | $URL |"
+            echo "| Environment | $DEPLOY_ENV |"
+            echo "| Ref | $DEPLOY_REF |"
+            echo
+            echo "#### Security headers"
+            echo
+            echo "| Header | Present |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          missing=0
+          for header in x-content-type-options referrer-policy strict-transport-security \
+                        x-frame-options content-security-policy permissions-policy; do
+            if printf '%s' "$headers" | grep -qi "^${header}:"; then
+              echo "| \`$header\` | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`$header\` | — |" >> "$GITHUB_STEP_SUMMARY"
+              missing=$((missing + 1))
+              echo "::notice title=Missing header::$header is not set on $URL."
+            fi
+          done
+
+          if [ "$missing" -gt 0 ]; then
+            echo "::warning::$missing security header(s) are missing. See the run summary; docs/CI_CD.md §7.2 records where they are configured."
+          else
+            echo "All expected security headers are present."
+          fi

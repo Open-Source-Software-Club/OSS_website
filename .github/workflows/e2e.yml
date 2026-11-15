@@ -44,7 +44,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Detect the Playwright suite
         id: detect
@@ -58,7 +60,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.e2e == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -84,7 +86,9 @@ jobs:
 
       - name: Run the Playwright suite
         if: steps.detect.outputs.e2e == 'true'
-        run: pnpm e2e
+        # Resolved through run-script.sh so either `e2e` or `test:e2e` works, and
+        # so a genuine test failure can never be mistaken for a missing script.
+        run: bash scripts/ci/run-script.sh 'e2e|test:e2e'
 
       - name: Upload the Playwright report
         if: always() && steps.detect.outputs.e2e == 'true'

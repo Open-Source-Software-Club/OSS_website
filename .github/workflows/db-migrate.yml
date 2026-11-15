@@ -35,6 +35,11 @@ concurrency:
   group: db-migrate-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # Keep in step with db-check.yml, which is the workflow that proves the
+  # migrations apply cleanly.
+  SUPABASE_CLI_VERSION: '3.1.0'
+
 permissions:
   contents: read
 
@@ -42,15 +47,13 @@ jobs:
   preflight:
     name: Preflight checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       should_apply: ${{ steps.check.outputs.should_apply }}
     steps:
-      - name: Refuse to run from a pull request
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "::error::Migrations must never be applied from a pull request."
-          exit 1
-
+      # The trigger list contains only `workflow_dispatch`, so a pull request
+      # cannot start this workflow at all. That is the preventive control; a
+      # "refuse to run from a pull request" step would be unreachable code.
       - name: Require explicit confirmation
         id: check
         env:
@@ -64,7 +67,9 @@ jobs:
           echo "should_apply=true" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Show the migrations that are about to be applied
         run: |
@@ -83,19 +88,26 @@ jobs:
     # configured in repository settings.
     environment:
       name: ${{ inputs.environment }}
-      url: ${{ vars.SITE_URL }}/admin
+      # An empty or relative URL makes the environment invalid and fails the job
+      # before the first step runs, so the fallback is part of the expression
+      # rather than something a maintainer has to remember to configure.
+      url: ${{ vars.SITE_URL || format('https://github.com/{0}', github.repository) }}
     timeout-minutes: 30
     env:
       SITE_URL: ${{ vars.SITE_URL }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: actions/checkout@v5
         with:
-          version: latest
+          persist-credentials: false
+
+      # Same version as db-check.yml: the migration is applied by the CLI that
+      # was tested against the migration.
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Link to the target project
         env:

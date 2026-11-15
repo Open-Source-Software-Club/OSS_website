@@ -14,10 +14,14 @@
 # Output helpers
 # ------------------------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  C_RESET='\033[0m'; C_RED='\033[1;31m'; C_GREEN='\033[1;32m'
-  C_YELLOW='\033[1;33m'; C_BLUE='\033[1;34m'; C_DIM='\033[2m'
+  # `declare a=1 b=2` keeps the block on one line while still letting a single
+  # SC2034 directive cover every variable: ShellCheck cannot see the reads,
+  # because they happen in the scripts that source this file.
+  # shellcheck disable=SC2034
+  declare C_RESET='\033[0m' C_RED='\033[1;31m' C_GREEN='\033[1;32m' C_YELLOW='\033[1;33m' C_BLUE='\033[1;34m' C_DIM='\033[2m'
 else
-  C_RESET=''; C_RED=''; C_GREEN=''; C_YELLOW=''; C_BLUE=''; C_DIM=''
+  # shellcheck disable=SC2034
+  declare C_RESET='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_DIM=''
 fi
 
 log_header() { printf '\n%s==>%s %s\n' "$C_BLUE" "$C_RESET" "$1"; }
@@ -38,7 +42,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT" || exit 1
 
 # Path of the allowlist files (reviewable in git, owned by CODEOWNERS).
+# shellcheck disable=SC2034  # consumed by the scripts that source this file
 ALLOWED_FILES_LIST=".github/allowed-files.txt"
+# shellcheck disable=SC2034  # consumed by the scripts that source this file
 LARGE_FILES_LIST=".github/large-files.allowlist"
 
 # Human-readable byte size, portable across GNU and BSD.
@@ -65,6 +71,7 @@ list_tracked_files() {
 # ------------------------------------------------------------------------------
 # Binary detection — text-only checks must not run against images or fonts.
 # ------------------------------------------------------------------------------
+# shellcheck disable=SC2034  # consumed by the scripts that source this file
 BINARY_EXTENSIONS='png|jpg|jpeg|gif|webp|avif|bmp|ico|icns|pdf|woff|woff2|ttf|otf|eot|mp3|mp4|webm|mov|zip|gz|tgz|tar|rar|7z|wasm|snap|jpeg'
 
 is_binary_file() {
@@ -125,8 +132,20 @@ is_allowlisted() {
 ERRORS=0
 WARNINGS=0
 
-record_error()   { ERRORS=$((ERRORS + 1)); log_fail "$1"; gha_error "$2"; }
-record_warning() { WARNINGS=$((WARNINGS + 1)); log_warn "$1"; gha_warning "$2"; }
+# The second argument is the optional GitHub Actions annotation text; without
+# it the human-readable message is used, so a caller can never accidentally
+# trigger an "unbound variable" failure under `set -u`.
+record_error() {
+  ERRORS=$((ERRORS + 1))
+  log_fail "$1"
+  gha_error "${2:-$1}"
+}
+
+record_warning() {
+  WARNINGS=$((WARNINGS + 1))
+  log_warn "$1"
+  gha_warning "${2:-$1}"
+}
 
 finish() {
   local label="$1"

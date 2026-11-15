@@ -1,7 +1,7 @@
 # Database Schema (Supabase / PostgreSQL)
 
 > §5 of the OSS Club Website PRD
-> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./ARCHITECTURE.md) · [GITHUB_INTEGRATION](./GITHUB_INTEGRATION.md)
+> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./architecture.md) · [GITHUB_INTEGRATION](./GITHUB_INTEGRATION.md)
 
 ---
 

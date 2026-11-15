@@ -1,0 +1,113 @@
+# ==============================================================================
+# OpenSSF Scorecard — supply-chain posture of this repository
+#
+# Docs: docs/CI_CD.md §4.10
+#
+# Everything else in this directory asks "is this pull request correct?". This
+# workflow asks a different question: "is this repository safe to depend on?" —
+# branch protection, review requirements, pinned dependencies, dangerous
+# workflow patterns, token permissions, dangerous release assets.
+#
+# It is the only check that scores the repository itself rather than a change to
+# it, which is why it runs on a schedule and on every push to main instead of on
+# pull requests: the score is a property of what is already on main.
+#
+# Findings land in the Security tab as SARIF, so a regression (a workflow that
+# suddenly holds a write token, branch protection quietly turned off) appears
+# next to the code-scanning alerts rather than in a log nobody reads.
+# ==============================================================================
+
+name: Scorecard
+
+on:
+  # Re-run when branch protection changes: that is the single biggest input to
+  # the score, and it is changed in repository settings rather than in a commit.
+  branch_protection_rule:
+  schedule:
+    - cron: '29 3 * * 1'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read          # scorecard reads workflow runs for some checks
+      security-events: write # SARIF upload
+      id-token: write        # required to publish the score (see publish_results)
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          # Scorecard reads the repository through the API; a shallow clone with
+          # no credential is all it needs.
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # `publish_results: true` sends the score to the public OpenSSF API,
+          # which is what produces the scorecard.dev badge. It is off by default
+          # so that a club repository is not publishing anything it did not
+          # choose to publish; flip it on (with the badge in README.md) when the
+          # maintainers want one.
+          publish_results: false
+
+      # The score is only useful if somebody sees it. The summary makes the run
+      # page readable; the SARIF upload makes the Security tab authoritative.
+      - name: Summarise the score
+        run: |
+          if [ ! -s results.sarif ]; then
+            echo "::warning::Scorecard produced no results.sarif — see the run log above."
+            exit 0
+          fi
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data = json.load(open('results.sarif', encoding='utf-8'))
+          rows = []
+          try:
+              checks = json.loads(data['runs'][0]['properties']['checks']) if 'checks' in data['runs'][0].get('properties', {}) else []
+          except (KeyError, IndexError, ValueError):
+              checks = []
+          if not checks:
+              for result in data.get('runs', [{}])[0].get('results', []):
+                  rows.append((result.get('ruleId', '?'), result.get('message', {}).get('text', '')))
+          else:
+              for check in checks:
+                  rows.append((check.get('name', '?'), f"{check.get('score', '?')}/10"))
+          print('### OpenSSF Scorecard')
+          print()
+          print('| Check | Result |')
+          print('|---|---|')
+          for name, value in rows:
+              print(f'| {name} | {value} |')
+          print()
+          print('Full report: Security tab → Code scanning → Scorecard.')
+          PY
+
+      - name: Upload the SARIF report
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+          category: scorecard
+
+      - name: Keep the raw results as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 30
+          if-no-files-found: ignore

@@ -1,7 +1,7 @@
 # Development Workflow
 
 > §11 of the OSS Club Website PRD
-> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./ARCHITECTURE.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
+> Related docs: [PRD](./PRD.md) · [ARCHITECTURE](./architecture.md) · [GITHUB_ISSUES](./GITHUB_ISSUES.md)
 
 ---
 
@@ -164,11 +164,15 @@ jobs:
 Sibling workflows: `security.yml` (Secret Scan · Dependency Review),
 `codeql.yml`, `db-check.yml` (migrations + pgTAP on a fresh local Postgres),
 `e2e.yml` (Playwright), `labels-sync.yml`, `reconcile.yml`, `db-migrate.yml`
-(manual approval), `stale.yml`, `protect-main.yml`, `pr-automation.yml`.
+(manual approval), `stale.yml`, `protect-main.yml`, `pr-automation.yml`,
+`workflow-security.yml` (zizmor audit of the workflows themselves),
+`scorecard.yml` (OpenSSF Scorecard), `release-drafter.yml` (draft release
+notes), `smoke.yml` (post-deployment HTTP check).
 
 **Design rule:** every required check runs unconditionally and always reports a
 conclusion. A skipped job cannot be a required status check without deadlocking
 merges, so jobs with nothing to do yet succeed with a `::notice::` instead.
+The authoritative description of all of this is `docs/CI_CD.md`.
 
 ### Deployment integration
 

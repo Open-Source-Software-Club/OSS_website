@@ -21,19 +21,23 @@ on:
     - cron: '0 7 * * 1'
   workflow_dispatch:
 
+# Least privilege at the workflow level; the jobs below widen only what they
+# touch. `contents: read` is the default for both.
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   stale-pull-requests:
     name: Stale pull requests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     timeout-minutes: 15
     steps:
       - name: Mark and close inactive pull requests
-        uses: actions/stale@v9
+        uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           # Only pull requests: issues are triaged by humans and a bot closing
@@ -58,10 +62,16 @@ jobs:
   merged-branches:
     name: Delete merged branches
     runs-on: ubuntu-latest
+    permissions:
+      # Deleting a ref is a write. The previous version of this job inherited a
+      # read-only token, so every deleteRef call failed with 403 and the branch
+      # was silently kept.
+      contents: write
+      pull-requests: read
     timeout-minutes: 10
     steps:
       - name: Delete branches whose pull request has been merged
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             // Belt and braces: repository settings already delete the head
@@ -97,5 +107,5 @@ jobs:
                 core.warning(`Could not process branch ${branch.name}: ${error.message}`);
               }
             }
-            core.summary.write(`## Merged branch cleanup\n\nDeleted ${merged.length} merged branch(es).\n`);
+            core.summary.addRaw(`## Merged branch cleanup\n\nDeleted ${merged.length} merged branch(es).\n`);
             await core.summary.write();
