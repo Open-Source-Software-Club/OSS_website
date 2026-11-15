@@ -1,0 +1,122 @@
+# ==============================================================================
+# AI Code Review — PR-Agent powered by Google Gemini
+#
+# Repository : Open-Source-Software-Club/OSS_website
+# Docs       : docs/CI_CD.md  (full pipeline documentation)
+#
+# PURPOSE
+#   Provides automated, beginner-friendly AI code review for every pull
+#   request opened against `main`, including those arriving from forks.
+#
+# WHAT THIS WORKFLOW DOES
+#   * On PR open / reopen / ready_for_review — auto-generates a PR description
+#     and runs an initial code review.
+#   * On PR synchronize (new commits pushed) — automatically re-runs code review.
+#   * On PR comment beginning with /review, /describe, /improve, /ask,
+#     /update_changelog — executes the matching PR-Agent command interactively.
+#
+# SECURITY MODEL — pull_request_target risk assessment & mitigations
+# -------------------------------------------------------------------
+#   The standard `pull_request` trigger runs in the fork's context and receives
+#   a read-only GITHUB_TOKEN without repository secret access. That token cannot
+#   post comments on behalf of the base repository, rendering the bot silent on fork PRs.
+#
+#   `pull_request_target` runs in the BASE repository context with base-repository
+#   permissions and access to secrets (`GEMINI_API_KEY`).
+#
+#   To mitigate risks inherent to privileged workflows:
+#     1. No checkout of PR code is performed — `actions/checkout` is omitted entirely.
+#     2. PR-Agent retrieves the diff purely in-memory through the GitHub API.
+#     3. No `run:` shell execution steps exist — eliminating shell template injection.
+#     4. Token permissions are restricted strictly to `contents: read`, `issues: write`,
+#        and `pull-requests: write`.
+#     5. Slash-commands on `issue_comment` are strictly restricted to trusted roles
+#        ('OWNER', 'MEMBER', 'COLLABORATOR') to prevent Gemini API quota exhaustion.
+#
+#   IMPORTANT: While these architectural safeguards significantly reduce attack surface
+#   (mitigating classic "pwn request" RCE), they do NOT eliminate all risks associated
+#   with privileged workflows or untrusted PR content (e.g., prompt injection, LLM
+#   hallucinations, API denial-of-service).
+#
+#   This exception is reviewed and documented in .github/zizmor.yml under
+#   `dangerous-triggers → ignore`.
+# ==============================================================================
+
+name: AI Code Review
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, synchronize]
+
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  ai-review:
+    # -------------------------------------------------------------------------
+    # Execution Guard:
+    # 1. Ignore bot events to prevent feedback loops.
+    # 2. For issue_comment events:
+    #    - Must belong to a pull request (not a general issue).
+    #    - Must start with a command slash ('/').
+    #    - Must be authored by a trusted collaborator ('OWNER', 'MEMBER',
+    #      'COLLABORATOR'). External PR authors cannot invoke slash commands
+    #      to prevent abusive or accidental Gemini API quota exhaustion (SEC-03).
+    #    External contributors receive automatic reviews on PR lifecycle events
+    #    (opened, reopened, ready_for_review, synchronize) via pull_request_target.
+    # -------------------------------------------------------------------------
+    if: |
+      github.event.sender.type != 'Bot' &&
+      (
+        github.event_name != 'issue_comment' ||
+        (
+          github.event.issue.pull_request &&
+          startsWith(github.event.comment.body, '/') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        )
+      )
+
+    name: AI Code Review (Gemini)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Run PR-Agent (Gemini)
+        # Pinned to the official repository via immutable commit SHA with version tag comment (SEC-04).
+        # Dependabot tracks this action and preserves the SHA pinning pattern.
+        uses: The-PR-Agent/pr-agent@e673a02076ce09a4726c3d0c3cc85780e59ca52b # v0.50.0
+        env:
+          # GitHub API authentication
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Google AI Studio authentication
+          # Provided in both POSIX-standard and provider-specific variable names
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_AI_STUDIO_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          # Model routing via LiteLLM
+          config.model: "gemini/gemini-3.8-flash"
+          config.fallback_models: "[]"
+          config.ai_timeout: "300"
+
+          # Automated actions on PR lifecycle events
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_review: "true"
+          github_action_config.auto_improve: "false"
+          github_action_config.pr_actions: >-
+            ["opened", "reopened", "ready_for_review"]
+
+          # Crucial for synchronize events: enable automated review on new commits
+          github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: >-
+            ["/review"]
