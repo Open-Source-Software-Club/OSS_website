@@ -397,6 +397,7 @@ This project is actively maintained by the student leads and faculty coordinator
 | **Technical Lead** | Yashwanth Gowda H | [@Yashwanth-202011](https://github.com/Yashwanth-202011) |
 | **Secretary** | Rakshita J K | [@Rakshitha-JK7](https://github.com/Rakshitha-JK7) |
 | **Joint Secretary** | Shreekara Bhatt | [@Shreekar-cloud](https://github.com/Shreekar-cloud) |
+|**Growth Head**|Charan Gowda M D|[@charangowdamd-cmd](https://github.com/charangowdamd-cmd)|
 
 Want to become a maintainer? Demonstrate active contributions, thoughtful PR reviews, and community support in accordance with our club charter.
 
