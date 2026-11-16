@@ -1,0 +1,12 @@
+.next
+node_modules
+coverage
+build
+dist
+.pnpm-store
+pnpm-lock.yaml
+*.md
+docs/
+.github/
+.githooks/
+scripts/
