@@ -10,9 +10,11 @@ export default function Home() {
           <div className="mb-2 flex justify-center">
             <Badge variant="secondary">Open Source Software Club</Badge>
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight">SVIT OSS Club</CardTitle>
+          <CardTitle asChild className="text-3xl font-bold tracking-tight">
+            <h1>SVIT OSS Club</h1>
+          </CardTitle>
           <CardDescription>
-            Scaffolded Next.js 14+ project with TypeScript strict, Tailwind CSS, and shadcn/ui.
+            Scaffolded Next.js 15 project with TypeScript strict, Tailwind CSS, and shadcn/ui.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center gap-4">

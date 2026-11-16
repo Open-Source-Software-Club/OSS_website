@@ -18,7 +18,7 @@ describe("UI Components", () => {
     expect(screen.getByRole("button", { name: /click me/i })).toBeInTheDocument();
   });
 
-  it("renders Card component", () => {
+  it("renders Card component with default h3 heading", () => {
     render(
       <Card>
         <CardHeader>
@@ -27,8 +27,18 @@ describe("UI Components", () => {
         <CardContent>Content</CardContent>
       </Card>
     );
-    expect(screen.getByText("Test Card")).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { level: 3, name: "Test Card" });
+    expect(heading).toBeInTheDocument();
     expect(screen.getByText("Content")).toBeInTheDocument();
+  });
+
+  it("renders CardTitle with asChild correctly", () => {
+    render(
+      <CardTitle asChild>
+        <h1>Custom Heading</h1>
+      </CardTitle>
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "Custom Heading" })).toBeInTheDocument();
   });
 
   it("renders Badge component", () => {
