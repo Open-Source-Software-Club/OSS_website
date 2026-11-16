@@ -102,8 +102,10 @@ jobs:
 
       - name: Report a clean merge
         if: (steps.inspect.outputs.squashed == 'true' && steps.pr.outputs.count != '0') || steps.inspect.outputs.is_initial == 'true'
+        env:
+          IS_INITIAL: ${{ steps.inspect.outputs.is_initial }}
         run: |
-          if [ "${{ steps.inspect.outputs.is_initial }}" = "true" ]; then
+          if [ "$IS_INITIAL" = "true" ]; then
             echo "Initial bootstrap commit detected — no incident raised."
           else
             echo "Push to main came from a merged pull request. No action needed."
