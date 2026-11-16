@@ -77,6 +77,15 @@ jobs:
             echo "squashed=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # An initial commit (no parents) is the bootstrap commit of a new repo
+          # or fork. It can never come from a PR, so raising an incident would be
+          # a false positive on every fresh setup. Skip it explicitly.
+          if [ "$((parents - 1))" -eq 0 ]; then
+            echo "is_initial=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_initial=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify the push came from a pull request
         id: pr
         env:
@@ -92,12 +101,16 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Report a clean merge
-        if: steps.inspect.outputs.squashed == 'true' && steps.pr.outputs.count != '0'
+        if: (steps.inspect.outputs.squashed == 'true' && steps.pr.outputs.count != '0') || steps.inspect.outputs.is_initial == 'true'
         run: |
-          echo "Push to main came from a merged pull request. No action needed."
+          if [ "${{ steps.inspect.outputs.is_initial }}" = "true" ]; then
+            echo "Initial bootstrap commit detected — no incident raised."
+          else
+            echo "Push to main came from a merged pull request. No action needed."
+          fi
 
       - name: Raise an incident for an unverified push
-        if: steps.inspect.outputs.squashed != 'true' || steps.pr.outputs.count == '0'
+        if: steps.inspect.outputs.is_initial != 'true' && (steps.inspect.outputs.squashed != 'true' || steps.pr.outputs.count == '0')
         uses: actions/github-script@v8
         env:
           # Untrusted text reaches JavaScript through the environment, never
