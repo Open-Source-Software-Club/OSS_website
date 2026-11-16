@@ -763,8 +763,12 @@ Three rules that are not negotiable:
 - **`protect-main.yml` is a detective control, not a preventive one.** It can
   raise an incident, but it cannot undo a push. The ruleset is what prevents the
   push; the workflow is what tells you it happened.
-- **The `accessibility` job is advisory.** Lighthouse in CI is a rough proxy; the
-  roadmap still requires a manual NVDA/VoiceOver pass before launch.
+- **The `accessibility` job is advisory** until the Next.js application exists (no
+  `package.json` / `pnpm-lock.yaml` yet). Once Phase 0 scaffolding lands the job
+  activates automatically and enforces the budgets in
+  `.github/lighthouse/config.json`: perf ≥ 90, a11y ≥ 95, SEO ≥ 90, LCP ≤ 2.5 s,
+  CLS ≤ 0.1, JS bundle ≤ 170 KB gz. A manual NVDA/VoiceOver pass is still required
+  before launch (Lighthouse is a machine proxy, not a full audit).
 - **Branch protection still needs one human action.** All five rulesets are
   written, validated by `check-rulesets.sh`, and ready — but they cannot be
   applied from an automation token. GitHub App installation tokens get
