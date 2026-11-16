@@ -92,19 +92,8 @@ updates:
         patterns:
           - '*'
 
-  # ----------------------------------------------------------------------------
-  # Docker (Supabase local development images, if/when used)
-  # ----------------------------------------------------------------------------
-  - package-ecosystem: docker
-    directory: '/supabase'
-    schedule:
-      interval: monthly
-      day: monday
-      time: '05:00'
-      timezone: 'Asia/Kolkata'
-    labels:
-      - dependencies
-      - 'type: maintenance'
-    commit-message:
-      prefix: chore
-      include: scope
+  # Docker (Supabase local development images) — re-add this block in the same
+  # PR that introduces supabase/config.toml (Phase 2). It is omitted here
+  # because Dependabot logs a silent error each week when the target directory
+  # does not exist, and it may not auto-reactivate when the directory is later
+  # created.
