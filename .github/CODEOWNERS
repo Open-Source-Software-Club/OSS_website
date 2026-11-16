@@ -93,14 +93,22 @@
 # needed at that point. Verify the rule fires on the first PR that adds the
 # path.
 # ------------------------------------------------------------------------------
-/src/lib/github/                    @NizzyStark @Yashwanth-202011  # Phase 3
-/src/lib/rbac/                      @NizzyStark @Yashwanth-202011  # Phase 4 — does not exist yet
-/src/lib/env/                       @NizzyStark @Yashwanth-202011  # Phase 1
-/src/lib/supabase/                  @NizzyStark @Yashwanth-202011  # Phase 2
-/src/middleware.ts                  @NizzyStark @Yashwanth-202011  # Phase 4 — does not exist yet
-/src/app/api/webhooks/              @NizzyStark @Yashwanth-202011  # Phase 3 — does not exist yet
-/src/app/api/cron/                  @NizzyStark @Yashwanth-202011  # Phase 3 — does not exist yet
-/src/app/admin/                     @Hiteshsai007 @Tarun4201 @harshab054  # Phase 5 — does not exist yet
+# Phase 3
+/src/lib/github/                    @NizzyStark @Yashwanth-202011
+# Phase 4 — does not exist yet
+/src/lib/rbac/                      @NizzyStark @Yashwanth-202011
+# Phase 1
+/src/lib/env/                       @NizzyStark @Yashwanth-202011
+# Phase 2
+/src/lib/supabase/                  @NizzyStark @Yashwanth-202011
+# Phase 4 — does not exist yet
+/src/middleware.ts                  @NizzyStark @Yashwanth-202011
+# Phase 3 — does not exist yet
+/src/app/api/webhooks/              @NizzyStark @Yashwanth-202011
+# Phase 3 — does not exist yet
+/src/app/api/cron/                  @NizzyStark @Yashwanth-202011
+# Phase 5 — does not exist yet
+/src/app/admin/                     @Hiteshsai007 @Tarun4201 @harshab054
 
 # ------------------------------------------------------------------------------
 # Design system — shared by every feature module
