@@ -68,7 +68,6 @@ run_check "large files"      bash "$CHECKS_DIR/check-large-files.sh" "${STAGED_A
 run_check "text hygiene"     bash "$CHECKS_DIR/check-text-hygiene.sh" "${STAGED_ARGS[@]}"
 run_check "documentation"    bash "$CHECKS_DIR/check-docs.sh" "${STAGED_ARGS[@]}"
 run_check "rulesets"         bash "$CHECKS_DIR/check-rulesets.sh"
-run_check "pr-agent workflow" bash "$CHECKS_DIR/check-pr-agent-workflow.sh"
 
 if [ "$FAST" -eq 0 ]; then
   run_check "branch name"     bash "$CHECKS_DIR/check-branch-name.sh"

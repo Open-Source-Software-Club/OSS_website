@@ -195,13 +195,6 @@ jobs:
       - name: Validate branch protection rulesets
         run: bash scripts/checks/check-rulesets.sh
 
-      # The PR-Agent workflow runs under pull_request_target with elevated
-      # token permissions (contents: read, issues/pull-requests: write) and
-      # secret access. It must never check out untrusted PR code, run shell
-      # steps, or expose unauthenticated slash-command triggers.
-      - name: Validate PR-Agent workflow security
-        run: bash scripts/checks/check-pr-agent-workflow.sh
-
       # The gate itself is shell. A syntax error in one of these scripts is not
       # a broken check — it is a check that silently stops running, which is
       # worse. `bash -n` parses every script without executing it.

@@ -70,4 +70,3 @@ rules:
   dangerous-triggers:
     ignore:
       - pr-automation.yml
-      - pr-agent.yml
