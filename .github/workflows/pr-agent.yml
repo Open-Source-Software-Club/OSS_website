@@ -88,7 +88,7 @@ jobs:
 
     name: AI Code Review (Gemini)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Run PR-Agent (Gemini)
@@ -100,13 +100,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
           # Google AI Studio authentication
-          # Provided in both POSIX-standard and provider-specific variable names
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_AI_STUDIO_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
           # Model routing via LiteLLM
           config.model: "gemini/gemini-3.8-flash"
           config.fallback_models: "[]"
+          config.reasoning_effort: "low"
           config.ai_timeout: "300"
 
           # Automated actions on PR lifecycle events

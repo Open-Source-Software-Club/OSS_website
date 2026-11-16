@@ -24,6 +24,11 @@ model = "gemini/gemini-3.8-flash"
 # misconfigured. A failed review is preferable to a surprise charge.
 fallback_models = []
 
+# Bound reasoning effort to "low" to prevent 300s inference timeouts on large diffs.
+# Gemini 3.8 Flash defaults to "medium" if unset, which allocates a deep thinking
+# budget that exceeds client connection limits on complex PR diffs.
+reasoning_effort = "low"
+
 # Gemini 3.8 Flash uses a fixed thinking budget rather than a temperature
 # dial. Setting temperature on it triggers an API error.
 no_temperature_models = ["gemini-3.8-flash"]
