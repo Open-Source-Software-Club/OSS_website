@@ -19,7 +19,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
-    "next": "14.2.35",
+    "next": "15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.6.0",
@@ -32,10 +32,10 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^5.1.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.35",
+    "eslint-config-next": "15.5.29",
     "eslint-config-prettier": "^10.0.1",
     "jsdom": "^26.0.0",
     "postcss": "^8.5.2",
@@ -43,7 +43,14 @@
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
-    "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.4",
+    "vitest": "^5.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "minimatch": "^11.0.8",
+      "postcss": "^8.5.33",
+      "vite": "^6.4.4"
+    }
   }
 }
