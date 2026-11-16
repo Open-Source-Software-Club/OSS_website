@@ -87,14 +87,27 @@
 # These modules hold tokens, trust boundaries and authorisation decisions.
 #
 # Replace with: @Open-Source-Software-Club/technical-leads
+#
+# NOTE: Paths marked "Phase N" do not exist yet. CODEOWNERS rules activate
+# automatically when the path is first created — no edit to this file is
+# needed at that point. Verify the rule fires on the first PR that adds the
+# path.
 # ------------------------------------------------------------------------------
+# Phase 3
 /src/lib/github/                    @NizzyStark @Yashwanth-202011
+# Phase 4 — does not exist yet
 /src/lib/rbac/                      @NizzyStark @Yashwanth-202011
+# Phase 1
 /src/lib/env/                       @NizzyStark @Yashwanth-202011
+# Phase 2
 /src/lib/supabase/                  @NizzyStark @Yashwanth-202011
+# Phase 4 — does not exist yet
 /src/middleware.ts                  @NizzyStark @Yashwanth-202011
+# Phase 3 — does not exist yet
 /src/app/api/webhooks/              @NizzyStark @Yashwanth-202011
+# Phase 3 — does not exist yet
 /src/app/api/cron/                  @NizzyStark @Yashwanth-202011
+# Phase 5 — does not exist yet
 /src/app/admin/                     @Hiteshsai007 @Tarun4201 @harshab054
 
 # ------------------------------------------------------------------------------
