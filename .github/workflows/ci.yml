@@ -451,6 +451,7 @@ jobs:
           path: .next/
           retention-days: 7
           if-no-files-found: ignore
+          include-hidden-files: true
 
   # ---------------------------------------------------------------------------
   # Job 4 — Accessibility budget (Lighthouse CI).
