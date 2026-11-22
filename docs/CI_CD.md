@@ -285,13 +285,14 @@ attacked:
   pattern, which hands a write token to a fork's code
 - the checkout credential left in `.git/config` and then shipped inside an
   uploaded artifact
-- an action referenced by a *branch* rather than a tag
+- an action referenced by anything other than a full commit SHA
 
 `zizmor` audits all of them, and `Workflow Security` fails the pull request with
-a file, a line and an audit name. The policy decisions that are deliberate —
-tags instead of SHA pins, `pull_request_target` in `pr-automation.yml` — are
-written down with their reasoning in `.github/zizmor.yml`, so an exception is a
-reviewed decision rather than a silenced warning.
+a file, a line and an audit name. Every action is SHA-pinned with its release in
+a trailing comment (`@<sha> # v5.1.0`), which Dependabot keeps current; the one
+deliberate exception — `pull_request_target` in `pr-automation.yml`, which checks
+out nothing — is written down with its reasoning in `.github/zizmor.yml`, so an
+exception is a reviewed decision rather than a silenced warning.
 
 This check exists because the audit found real defects on its first run:
 
@@ -836,23 +837,30 @@ Four rules that are not negotiable:
   every merge before the team has read them.
 - **`publish_results` is off in Scorecard**, so no public score is published. The
   SARIF report still lands in the Security tab. See §8.
-- **Actions are pinned to major-version tags, not commit SHAs.** Dependabot
-  watches the `github-actions` ecosystem, so a security release arrives as a
-  reviewed pull request; a SHA pin would remove that update path and make the
-  diff unreadable. A *branch* reference is rejected by `Workflow Security` —
-  `supabase/setup-cli@v1` and `actions/dependency-review-action@v4` were exactly
-  that, and both are now tags.
+- **Actions are pinned to commit SHAs**, each with its release in a trailing
+  comment. Dependabot's `github-actions` updates bump the SHA and the comment
+  together, so a security release still arrives as a reviewed pull request, and
+  `Workflow Security` (zizmor, `hash-pin`) rejects any new `uses:` that is not a
+  full SHA. Tag pins were used until 2026-11 and were Scorecard's largest
+  finding (Pinned-Dependencies, 45 alerts).
+- **Scorecard findings that code cannot fix.** `Maintained` scores 0 until the
+  repository is 90 days old (2027-02-13); `Code-Review` rises as merged pull
+  requests carry approvals; `CII-Best-Practices` needs a maintainer to register
+  the project at bestpractices.dev; `Fuzzing` does not apply to a website; and
+  `Token-Permissions` keeps two job-scoped `contents: write` grants that the
+  jobs cannot work without (Release Drafter writes the draft release;
+  Housekeeping deletes merged branches).
 - **A few actions still run on the Node 20 runtime**
   (`actions/upload-artifact@v4`, `actions/download-artifact@v4`,
   `EndBug/label-sync@v2`): the runner executes them on Node 24 with a deprecation
   warning. They are not bumped yet because the Node 24 majors either do not exist
   or would break the upload/download pairing that the `Accessibility` job depends
   on. The warning is cosmetic and Dependabot will surface the upgrade.
-- **pnpm is installed with `npm install --global pnpm@<pinned>`.** `zizmor`
-  flags that as an ad-hoc package install, and `.github/zizmor.yml` records why
-  it is deliberate: there is no lockfile to install the package manager from.
-  `pnpm/action-setup@v4` is the tidier replacement and is the upgrade path once
-  `package.json` exists to test it against.
+- **pnpm is installed by `pnpm/action-setup`, versioned by `package.json`.** The
+  action reads the version from the `packageManager` field, which
+  `check-lockfiles.sh` therefore requires (`"pnpm@<version>"`). There is one
+  place to bump pnpm, and no `npm install --global`, which Scorecard counts as
+  an unpinned download.
 - **`delete_branch_on_merge` is off in repository settings**, so the weekly
   `Housekeeping` job is the only thing deleting merged branches. It needs
   `contents: write` to do that (it did not have it, so it deleted nothing).

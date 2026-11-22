@@ -48,7 +48,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -64,15 +64,18 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.e2e == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
 
-      - name: Install pnpm and dependencies
+      # Version from package.json's `packageManager`; see ci.yml.
+      - name: Install pnpm
         if: steps.detect.outputs.e2e == 'true'
-        run: |
-          npm install --global "pnpm@9.15.9"
-          pnpm install --frozen-lockfile
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Install dependencies
+        if: steps.detect.outputs.e2e == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
         if: steps.detect.outputs.e2e == 'true'
@@ -96,7 +99,7 @@ jobs:
 
       - name: Upload the Playwright report
         if: always() && steps.detect.outputs.e2e == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: |

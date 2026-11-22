@@ -39,7 +39,6 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  PNPM_VERSION: '9.15.9'
   NODE_VERSION: '22'
   NEXT_TELEMETRY_DISABLED: '1'
 
@@ -60,7 +59,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           # The token is not needed after checkout: every step below reads the
@@ -158,6 +157,66 @@ jobs:
           fi
           echo "actionlint: all workflows are structurally valid."
 
+      # Moved here from pr-automation.yml. There it validated the BASE branch's
+      # copy after the fact; here it validates the copy a pull request proposes,
+      # so a broken labeler.yml cannot merge in the first place.
+      - name: Validate the labeler configuration (actions/labeler v5+ schema)
+        run: |
+          if [ ! -f .github/labeler.yml ]; then
+            echo "::error::.github/labeler.yml is missing, so pr-automation.yml cannot apply labels from the diff."
+            exit 1
+          fi
+          if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+            echo "::notice::PyYAML is not available; skipping labeler.yml validation."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import sys, yaml
+
+          MATCHERS = {'changed-files', 'head-branch', 'base-branch', 'any', 'all'}
+          TOP_LEVEL_SCALARS = {'changed-files-labels-limit', 'max-files-changed'}
+
+          try:
+              cfg = yaml.safe_load(open('.github/labeler.yml', encoding='utf-8'))
+          except yaml.YAMLError as exc:
+              print(f'::error file=.github/labeler.yml::not valid YAML: {exc}')
+              sys.exit(1)
+
+          if not isinstance(cfg, dict) or not cfg:
+              print('::error file=.github/labeler.yml::empty or malformed.')
+              sys.exit(1)
+
+          problems = []
+          labels = 0
+          for label, rules in cfg.items():
+              if label in TOP_LEVEL_SCALARS:
+                  continue
+              labels += 1
+              # The v5+ schema: label -> list of configuration objects. A mapping
+              # here is the v4 shape, and the action rejects it at run time with
+              # "should be array of config options".
+              if not isinstance(rules, list):
+                  problems.append(
+                      f"'{label}': expected a list of rule objects, got {type(rules).__name__} "
+                      f"(actions/labeler v5+ schema)")
+                  continue
+              for rule in rules:
+                  if not isinstance(rule, dict) or not rule:
+                      problems.append(f"'{label}': every list entry must be a rule object")
+                      continue
+                  unknown = set(rule) - MATCHERS
+                  if unknown:
+                      problems.append(
+                          f"'{label}': unknown matcher(s) {sorted(unknown)}; "
+                          f"allowed: {sorted(MATCHERS)} (note: 'title' was removed in v5)")
+
+          if problems:
+              for problem in problems:
+                  print(f'::error file=.github/labeler.yml::{problem}')
+              sys.exit(1)
+          print(f'labeler.yml is valid ({labels} label(s), actions/labeler v5+ schema).')
+          PY
+
       - name: Validate CODEOWNERS
         run: |
           if [ ! -f .github/CODEOWNERS ]; then
@@ -249,7 +308,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -266,15 +325,17 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.app == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # The pnpm version comes from the `packageManager` field of package.json
+      # (check-lockfiles.sh requires it), so there is one place to bump it. A
+      # SHA-pinned action rather than `npm install --global pnpm@…`: Scorecard
+      # (Pinned-Dependencies) treats any `npm install` as an unpinned download.
       - name: Install pnpm
         if: steps.detect.outputs.app == 'true'
-        run: |
-          npm install --global "pnpm@$PNPM_VERSION"
-          pnpm --version
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - name: Resolve pnpm store path
         if: steps.detect.outputs.app == 'true'
@@ -283,7 +344,7 @@ jobs:
 
       - name: Cache the pnpm store
         if: steps.detect.outputs.app == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -358,7 +419,7 @@ jobs:
       # by the next job.
       - name: Upload build output
         if: steps.detect.outputs.app == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: next-build-output
           path: |
@@ -380,7 +441,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -396,19 +457,21 @@ jobs:
 
       - name: Setup Node.js
         if: steps.detect.outputs.app == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install pnpm and dependencies
+      - name: Install pnpm
         if: steps.detect.outputs.app == 'true'
-        run: |
-          npm install --global "pnpm@$PNPM_VERSION"
-          pnpm install --frozen-lockfile
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Install dependencies
+        if: steps.detect.outputs.app == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Download build output
         if: steps.detect.outputs.app == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: next-build-output
           path: .next/
@@ -419,7 +482,7 @@ jobs:
       # profile — one place for the whole audit, versioned with the code.
       - name: Run Lighthouse CI
         if: steps.detect.outputs.app == 'true'
-        uses: treosh/lighthouse-ci-action@v12
+        uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # 12.6.2
         with:
           configPath: .github/lighthouse/config.json
           uploadArtifacts: true

@@ -3,9 +3,8 @@
 #
 # Configuration for the "Workflow Security" check (.github/workflows/workflow-security.yml).
 #
-# zizmor's defaults are deliberately strict. Two of them do not fit this
-# repository, and rather than disabling the audit this file records *why* each
-# exception exists. Every entry below is a reviewed decision, not a silence.
+# zizmor's defaults are deliberately strict. Where this file departs from them
+# it records *why*: every entry below is a reviewed decision, not a silence.
 #
 # Docs: docs/CI_CD.md §4.9
 # Reference: https://docs.zizmor.sh/configuration/
@@ -15,57 +14,38 @@ rules:
   # ----------------------------------------------------------------------------
   # unpinned-uses
   #
-  # zizmor's strictest policy ("hash-pin") requires every action to be pinned to
-  # a commit SHA. This repository pins to a major version tag instead, on
-  # purpose:
+  # Every action is pinned to a full commit SHA, with the release it
+  # corresponds to in a trailing comment:
   #
-  #   * Dependabot watches the `github-actions` ecosystem weekly
-  #     (.github/dependabot.yml), so a security release reaches this repository
-  #     as a reviewed pull request. That is the update path SHA pinning removes.
-  #   * A SHA pin is unreadable in a diff, so a reviewer cannot tell a patch bump
-  #     from a different action entirely.
-  #   * The pipeline already refuses *branch* refs (see the two fixes in
-  #     docs/CI_CD.md §4.9): `supabase/setup-cli@v1` and
-  #     `actions/dependency-review-action@v4` were moving branches, and both are
-  #     now tags.
+  #     uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
   #
-  # "ref-pin" still rejects a branch or a bare action name, which is the part
-  # that actually matters: a tag can be retargeted only by its publisher, a
-  # branch by anyone with write access to that repository.
+  # A tag can be moved by whoever controls the action's repository, so a tag
+  # pin runs whatever that tag points at today; a SHA cannot change. This is
+  # what OpenSSF Scorecard's Pinned-Dependencies check measures.
+  #
+  # The two objections that once kept this repository on tags no longer hold:
+  # Dependabot (.github/dependabot.yml, github-actions ecosystem) updates SHA
+  # pins and rewrites the version comment alongside, so upgrades still arrive as
+  # reviewed pull requests; and the comment makes the diff readable — a reviewer
+  # sees `# v5.1.0` → `# v5.2.0`, not two opaque hashes.
+  #
+  # "hash-pin" is zizmor's default; it is stated here so the policy is explicit
+  # and a later "simplify to tags" change has to delete a documented decision.
   # ----------------------------------------------------------------------------
   unpinned-uses:
     config:
       policies:
-        "*": ref-pin
-
-  # ----------------------------------------------------------------------------
-  # adhoc-packages
-  #
-  # `npm install --global pnpm@<exact version>` is how the package manager
-  # itself gets installed. There is no lockfile to install *it* from — that is
-  # the thing pnpm exists to provide — and the version is pinned in one place
-  # (env.PNPM_VERSION) rather than floating.
-  #
-  # pnpm/action-setup@v4 is the tidier replacement and is the documented upgrade
-  # path once Phase 0 lands package.json (see docs/CI_CD.md §11), but it errors
-  # out when package.json declares a `packageManager` field that disagrees with
-  # the version input, and this repository has no package.json yet to test that
-  # against. Installing pnpm by hand cannot regress; it is simply less pretty.
-  # ----------------------------------------------------------------------------
-  adhoc-packages:
-    ignore:
-      - ci.yml
-      - e2e.yml
-      - security.yml
+        "*": hash-pin
 
   # ----------------------------------------------------------------------------
   # dangerous-triggers
   #
   # `pull_request_target` is required to label pull requests that arrive from
   # forks — a `pull_request` trigger gives a fork's pull request a read-only
-  # token. It is safe here because the job checks out the **base** commit, never
-  # the head, and runs no code from the contribution. The full reasoning is in
-  # the header of pr-automation.yml.
+  # token. It is safe here because the job checks out nothing at all and runs
+  # no code from the contribution: the labeler fetches its rules from the base
+  # branch through the API. The full reasoning is in the header of
+  # pr-automation.yml.
   # ----------------------------------------------------------------------------
   dangerous-triggers:
     ignore:

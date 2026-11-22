@@ -53,14 +53,23 @@ fi
 
 # Warn (do not fail) about an out-of-date pnpm version pin in CI, so the
 # packageManager field and the workflow never silently diverge.
+#
+# Required, not advisory: CI installs pnpm with pnpm/action-setup, which reads
+# the version from this field. Without it, every job that needs pnpm fails with
+# "No pnpm version is specified" — so say so here, in plain words, instead.
 if [ -f 'package.json' ]; then
-  pm="$(grep -o '"packageManager"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null | head -1 | sed 's/.*"pnpm@\([^"]*\)".*/\1/')"
-  if [ -n "${pm:-}" ]; then
-    log_ok "package.json pins packageManager pnpm@$pm"
-  else
-    log_warn "package.json does not pin a packageManager field" \
-      "Consider adding \"packageManager\": \"pnpm@9\" to package.json so every contributor and CI runner uses the same pnpm version."
-  fi
+  pm="$(grep -o '"packageManager"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null | head -1 \
+        | sed 's/^"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)"$/\1/')"
+  case "${pm:-}" in
+    pnpm@?*)
+      log_ok "package.json pins packageManager $pm" ;;
+    '')
+      record_error "package.json has no \"packageManager\" field" \
+        "package.json must declare \"packageManager\": \"pnpm@<version>\" (for example \"pnpm@9.15.9\"). CI takes the pnpm version from it, so every contributor and every runner uses the same one." ;;
+    *)
+      record_error "package.json declares packageManager '$pm', not pnpm" \
+        "package.json declares \"packageManager\": \"$pm\". This repository uses pnpm exclusively — set it to \"pnpm@<version>\"." ;;
+  esac
 fi
 
 finish "Lockfile policy check"

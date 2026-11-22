@@ -45,7 +45,7 @@ jobs:
       # count of -1 and raised a false incident. The repository has to be
       # present before it can be inspected.
       - name: Checkout the pushed commit with its history
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -98,7 +98,7 @@ jobs:
 
       - name: Raise an incident for an unverified push
         if: steps.inspect.outputs.squashed != 'true' || steps.pr.outputs.count == '0'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           # Untrusted text reaches JavaScript through the environment, never
           # through `${{ }}` inside the script body: a commit subject such as

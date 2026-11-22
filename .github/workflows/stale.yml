@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Mark and close inactive pull requests
-        uses: actions/stale@v11
+        uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           # Only pull requests: issues are triaged by humans and a bot closing
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Delete branches whose pull request has been merged
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             // Belt and braces for "Automatically delete head branches" in the

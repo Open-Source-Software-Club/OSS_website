@@ -41,13 +41,13 @@ jobs:
     name: Secret Scan
     runs-on: ubuntu-latest
     # Job-scoped, because the workflow is otherwise read-only. Gitleaks comments
-    # on the pull request (pull-requests: write) and publishes findings to the
-    # Security tab (security-events: write); without these it silently degrades
-    # to a log line.
+    # on the pull request (pull-requests: write). It does NOT need
+    # `security-events: write`: gitleaks-action uploads its SARIF as a workflow
+    # artifact, not to code scanning, so that grant was unused write access
+    # (Scorecard Token-Permissions).
     permissions:
       contents: read
       pull-requests: write
-      security-events: write
     timeout-minutes: 15
     # When set as a repository secret, the full-history Gitleaks sweep is
     # enabled. The bash scanner below is the gate and needs no configuration.
@@ -60,7 +60,7 @@ jobs:
       GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           # Scanning only needs the working tree and history, never a push.
@@ -71,7 +71,7 @@ jobs:
 
       - name: Scan full git history with Gitleaks
         if: ${{ env.GITLEAKS_LICENSE != '' }}
-        uses: gitleaks/gitleaks-action@v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITLEAKS_ENABLE_COMMENTS: true
@@ -119,7 +119,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -150,7 +150,7 @@ jobs:
 
       - name: Review dependency changes
         if: steps.detect.outputs.deps == 'true'
-        uses: actions/dependency-review-action@v5.0.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
           deny-licenses: 'AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later'
@@ -160,12 +160,14 @@ jobs:
       # `pnpm install` that used to precede it downloaded the whole tree and ran
       # the install scripts of every dependency the pull request added — slow,
       # and the one thing a dependency review should never do.
+      # Version from package.json's `packageManager`; see ci.yml.
+      - name: Install pnpm
+        if: steps.detect.outputs.deps == 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
       - name: Audit the dependency tree
         if: steps.detect.outputs.deps == 'true'
-        env:
-          PNPM_VERSION: '9.15.9'
         run: |
-          npm install --global "pnpm@$PNPM_VERSION"
           # High and critical only: this is a student club website, and blocking
           # a contribution over a low-severity transitive advisory helps nobody.
           # A failure here is a warning, not a merge blocker, because the

@@ -24,14 +24,18 @@ concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Read-only at the top; the one write scope is granted to the job that uploads
+# results. A workflow-level write grant reaches every job added here later.
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload the analysis to the Security tab
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -39,7 +43,7 @@ jobs:
         language: [javascript-typescript]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -55,12 +59,13 @@ jobs:
 
       # v4 is the current major (Node 24 runtime); v3 still works but is on the
       # Node 20 deprecation path.
+      #
       # JavaScript/TypeScript is analysed from source: `build-mode: none` is the
       # mode CodeQL uses for it, and the Autobuild step that used to follow had
       # nothing to build.
       - name: Initialise CodeQL
         if: steps.detect.outputs.app == 'true'
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
@@ -68,6 +73,6 @@ jobs:
 
       - name: Perform CodeQL analysis
         if: steps.detect.outputs.app == 'true'
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           category: /language:${{ matrix.language }}
