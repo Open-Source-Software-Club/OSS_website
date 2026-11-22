@@ -314,9 +314,11 @@ specification nobody can follow.
 - every relative link and image path in every tracked Markdown file resolves
 - no document has more than one H1
 
-External URLs are deliberately not checked: a network-dependent link check fails
-when GitHub rate-limits a runner, and a check that fails for reasons unrelated
-to the change is a check people learn to ignore.
+External URLs are deliberately not checked here: a network-dependent link check
+fails when GitHub rate-limits a runner, and a check that fails for reasons
+unrelated to the change is a check people learn to ignore. They are checked
+weekly instead, by `link-check.yml` (lychee), whose failed run lists every
+broken link with its file.
 
 It paid for itself immediately — the first run found eight broken links, all of
 them pointing at `./ARCHITECTURE.md` (the file is `docs/architecture.md`, and
@@ -422,13 +424,35 @@ access can still commit straight to `main` and merge a red build.
 | Last-push approval required | the person who pushed last cannot self-approve the final state |
 | Required review-thread resolution | no unresolved "this is wrong" left behind |
 | Squash merge only | matches the Conventional Commit title rule |
-| Branches up to date before merging | prevents merging something that was never tested against current `main` |
+| Merge queue (`merge_queue`, squash) | every change is tested against the `main` it will actually land on, without the author updating the branch |
 | Required status checks | the five in §3 |
 
-`require_code_owner_review` is why `.github/CODEOWNERS` lists individual
-`@usernames` instead of `@Open-Source-Software-Club/*` teams: a CODEOWNERS entry
-that names a team which does not exist matches nothing, which would make the
-requirement permanently unsatisfiable and block every merge.
+**The merge queue replaces "require branches to be up to date".** With the
+up-to-date rule, every change to `main` made each approved pull request stale;
+updating it was a new push, which dismissed the approval and needed a
+reviewer again (#38 sat approved but unmergeable for a week). Now a maintainer
+presses **Merge when ready**, GitHub builds a temporary branch
+(`gh-readonly-queue/main/pr-N-…`) with the pull request on top of the latest
+`main` plus anything queued ahead of it, runs the required checks there, and
+merges only if they pass. Nobody re-approves anything.
+
+Two consequences for anyone editing the pipeline:
+
+- **Every required check must run on `merge_group`.** A check that never
+  reports in the queue holds every queued pull request for
+  `check_response_timeout_minutes` (60) and then ejects it.
+  `check-rulesets.sh` fails the build if a required check's workflow lacks the
+  trigger. A check with nothing to do in the queue (PR Conventions, Dependency
+  Review — both read pull-request data that a merge group does not have) is
+  skipped by a job-level `if:`, and a job skipped that way reports success.
+- **`strict_required_status_checks_policy` is off** on purpose; the queue is
+  what guarantees up-to-date testing.
+
+`require_code_owner_review` needs every team named in `.github/CODEOWNERS` to
+exist and have write access: an entry naming a team that does not exist matches
+nothing, which would make the requirement permanently unsatisfiable and block
+every merge. `gh api repos/Open-Source-Software-Club/OSS_website/codeowners/errors`
+lists any unresolvable line.
 
 > **Note on bypass actors:** every ruleset ships with an empty bypass list,
 > which is deliberate. Even repository administrators are bound by it. An
@@ -556,13 +580,16 @@ the team wants to read the rule insights before anything is rejected.
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| `ci.yml` | PR, push to `main`, manual | Repository Hygiene · Verify · Accessibility |
-| `pr-conventions.yml` | PR opened / edited / synchronised / reopened / labelled / unlabelled | PR Conventions |
-| `security.yml` | PR, push to `main`, weekly, manual | Secret Scan · Dependency Review |
+| `ci.yml` | PR, merge queue, push to `main`, manual | Repository Hygiene · Verify · Accessibility |
+| `pr-conventions.yml` | PR opened / edited / synchronised / reopened / labelled / unlabelled; merge queue (skipped there) | PR Conventions |
+| `security.yml` | PR, merge queue, push to `main`, weekly, manual | Secret Scan · Dependency Review |
 | `codeql.yml` | PR, push to `main`, weekly, manual | CodeQL Analysis |
 | `db-check.yml` | PR touching `supabase/**`, push to `main` | Database (Migrations & RLS Tests) |
 | `e2e.yml` | PR and push to `main`, except documentation-only changes | End-to-End Tests |
-| `pr-automation.yml` | PR opened / edited / synchronised / reopened | Apply labels from the diff |
+| `pr-automation.yml` | PR opened / edited / synchronised / reopened | Apply labels from the diff (path and title labels, linked-issue check) |
+| `issue-claims.yml` | issue comment starting `/assign` or `/unassign`; daily; manual | Handle /assign and /unassign · Remind or release inactive claims |
+| `welcome.yml` | first issue or first PR from a contributor | Welcome first-time contributors |
+| `link-check.yml` | weekly, manual | External links in Markdown |
 | `labels-sync.yml` | weekly, on a `labels.yml` change reaching `main`, manual | Sync labels (this repository) · Sync labels (all organisation repositories) |
 | `reconcile.yml` | every 15 minutes once `SITE_URL` is set, manual | Reconcile GitHub cache |
 | `db-migrate.yml` | manual only, environment-gated; production only from `main` | Preflight checks · Apply migrations |
