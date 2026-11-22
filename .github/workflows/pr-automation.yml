@@ -23,17 +23,22 @@
 #       request `priority: critical` or teach the labeler to do anything.
 #     * no `npm install`, no build, no script from the pull request is executed.
 #
-#   `docs/CI_CD.md` §10 states the rule this workflow follows: untrusted values
+#   `docs/CI_CD.md` §4.9 and §10 state the rule this workflow follows: untrusted values
 #   are never interpolated into a `run:` block, and untrusted code is never run
 #   with a write token.
 # ==============================================================================
 
 name: PR Automation
 
+# `labeled`/`unlabeled` are deliberately absent. With `sync-labels: true` the
+# labeler removes every path label whose files the PR does not touch, so
+# re-running it on a label change instantly stripped any area label a
+# maintainer had just added by hand. `edited` is present so that fixing the
+# title re-applies the matching "type:" label.
 on:
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, edited, synchronize, reopened]
 
 concurrency:
   group: pr-automation-${{ github.event.pull_request.number }}

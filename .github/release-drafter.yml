@@ -11,7 +11,7 @@
 # The shape of the output follows CHANGELOG.md (Keep a Changelog), so a release
 # note can be pasted straight into it.
 #
-# Docs: docs/CI_CD.md §7.3
+# Docs: docs/CI_CD.md §7.1
 # ==============================================================================
 
 name-template: 'v$RESOLVED_VERSION'

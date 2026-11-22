@@ -13,21 +13,20 @@
 
 name: E2E
 
+# The suite runs on every change except documentation. It used to be filtered
+# to tests/e2e/** and the Playwright config, which meant a change to the
+# application itself — the thing E2E exists to protect — never ran it.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'tests/e2e/**'
-      - 'playwright.config.ts'
-      - 'playwright.config.js'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/e2e.yml'
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   push:
     branches: [main]
-    paths:
-      - 'tests/e2e/**'
-      - 'playwright.config.ts'
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
@@ -40,7 +39,12 @@ permissions:
 jobs:
   playwright:
     name: End-to-End Tests
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: ubuntu-latest moved to 26.04, and
+    # Playwright 1.55 cannot install Chromium's system dependencies there
+    # ("Playwright does not support chromium on ubuntu26.04-x64"), which failed
+    # every E2E run on #58. Move back to ubuntu-latest once the Playwright
+    # version in package.json lists 26.04 as supported.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout repository

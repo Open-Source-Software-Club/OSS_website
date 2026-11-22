@@ -30,7 +30,10 @@ on:
         description: 'Validate the taxonomy but do not change any label'
         type: boolean
         default: false
+  # main only: without the branch filter, pushing an edited labels.yml to ANY
+  # branch — an unreviewed one included — rewrote the repository's labels.
   push:
+    branches: [main]
     paths:
       - '.github/labels.yml'
       - '.github/workflows/labels-sync.yml'

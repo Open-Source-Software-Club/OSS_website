@@ -31,8 +31,11 @@ on:
         type: string
         required: true
 
+# One migration per DATABASE at a time, not per branch: keyed on github.ref, two
+# dispatches from different branches could run `supabase db push` against the
+# same production database concurrently.
 concurrency:
-  group: db-migrate-${{ github.ref }}
+  group: db-migrate-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -54,14 +57,27 @@ jobs:
       # The trigger list contains only `workflow_dispatch`, so a pull request
       # cannot start this workflow at all. That is the preventive control; a
       # "refuse to run from a pull request" step would be unreachable code.
-      - name: Require explicit confirmation
+      # `workflow_dispatch` can be started from ANY branch, so without this the
+      # migrations applied to production would be whatever an unmerged branch
+      # contains — exactly the "auto from PR" this workflow exists to prevent.
+      # The Production environment's deployment-branch policy is the second
+      # line of defence; this one fails in seconds with a sentence that says why.
+      - name: Require explicit confirmation and a reviewed ref
         id: check
         env:
           CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.environment }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ "$CONFIRM" != "MIGRATE" ]; then
             echo "should_apply=false" >> "$GITHUB_OUTPUT"
             echo "::error::You must type MIGRATE to confirm. Review the pending migrations first."
+            exit 1
+          fi
+          if [ "$TARGET" = 'production' ] && [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "should_apply=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Production migrations must be run from '$DEFAULT_BRANCH', not '$REF'. Only reviewed, merged migrations may reach production."
             exit 1
           fi
           echo "should_apply=true" >> "$GITHUB_OUTPUT"

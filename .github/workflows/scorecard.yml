@@ -1,7 +1,7 @@
 # ==============================================================================
 # OpenSSF Scorecard — supply-chain posture of this repository
 #
-# Docs: docs/CI_CD.md §4.10
+# Docs: docs/CI_CD.md §3 · §8
 #
 # Everything else in this directory asks "is this pull request correct?". This
 # workflow asks a different question: "is this repository safe to depend on?" —

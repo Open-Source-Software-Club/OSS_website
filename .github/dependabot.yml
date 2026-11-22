@@ -6,8 +6,16 @@
 # Security patches must arrive without waiting for a volunteer to notice them.
 # Dependabot opens the pull request; CI is what decides whether it is safe.
 #
-# Grouping: every update lands in its own PR so a single bad transitive
-# dependency never blocks a security fix.
+# Grouping: packages that must move together (Next.js + React + TypeScript,
+# Tailwind + PostCSS, the test runners) share one PR each; everything else lands
+# in its own PR, so a single bad transitive dependency never blocks a security
+# fix.
+#
+# commit-message: Dependabot inserts the ':' after `prefix` itself, which with
+# `include: scope` produces "chore(deps): bump …". There is no
+# `prefix-separator` option — it used to be set here, and an unknown key makes
+# Dependabot reject the whole file, which is why no Dependabot run or pull
+# request ever appeared.
 # ==============================================================================
 
 version: 2
@@ -30,7 +38,6 @@ updates:
       - 'type: maintenance'
     commit-message:
       prefix: chore
-      prefix-separator: ':'
       include: scope
     versioning-strategy: increase
     groups:
@@ -79,7 +86,6 @@ updates:
       - 'type: maintenance'
     commit-message:
       prefix: ci
-      prefix-separator: ':'
       include: scope
     groups:
       actions:
@@ -101,5 +107,4 @@ updates:
       - 'type: maintenance'
     commit-message:
       prefix: chore
-      prefix-separator: ':'
       include: scope

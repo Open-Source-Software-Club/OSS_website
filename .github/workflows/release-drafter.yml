@@ -1,7 +1,7 @@
 # ==============================================================================
 # Release Drafter — release notes from the pull requests that reached main
 #
-# Docs: docs/CI_CD.md §7.3 · CHANGELOG.md
+# Docs: docs/CI_CD.md §7.1 · CHANGELOG.md
 #
 # The repository squash-merges, and the pull-request title becomes the commit on
 # main — which is why "PR Conventions" insists on a Conventional Commit header.

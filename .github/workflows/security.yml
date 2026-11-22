@@ -30,11 +30,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # When set as a repository secret, the full-history Gitleaks sweep is enabled.
-  # The bash scanner below is the gate and needs no configuration at all.
-  GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-
 jobs:
   # ---------------------------------------------------------------------------
   # Required check: "Secret Scan"
@@ -54,6 +49,15 @@ jobs:
       pull-requests: write
       security-events: write
     timeout-minutes: 15
+    # When set as a repository secret, the full-history Gitleaks sweep is
+    # enabled. The bash scanner below is the gate and needs no configuration.
+    #
+    # Job-scoped, not workflow-wide: at workflow level the licence was in the
+    # environment of every step in this file, including the dependency-review
+    # job that used to run `pnpm install` — i.e. every install script of every
+    # package a pull request added could read it.
+    env:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -152,13 +156,16 @@ jobs:
           deny-licenses: 'AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later'
           comment-summary-in-pr: always
 
+      # `pnpm audit` reads pnpm-lock.yaml; it does not need node_modules. The
+      # `pnpm install` that used to precede it downloaded the whole tree and ran
+      # the install scripts of every dependency the pull request added — slow,
+      # and the one thing a dependency review should never do.
       - name: Audit the dependency tree
         if: steps.detect.outputs.deps == 'true'
         env:
           PNPM_VERSION: '9.15.9'
         run: |
           npm install --global "pnpm@$PNPM_VERSION"
-          pnpm install --frozen-lockfile
           # High and critical only: this is a student club website, and blocking
           # a contribution over a low-severity transitive advisory helps nobody.
           # A failure here is a warning, not a merge blocker, because the
