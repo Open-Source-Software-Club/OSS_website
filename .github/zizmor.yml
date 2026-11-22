@@ -40,13 +40,26 @@ rules:
   # ----------------------------------------------------------------------------
   # dangerous-triggers
   #
-  # `pull_request_target` is required to label pull requests that arrive from
-  # forks — a `pull_request` trigger gives a fork's pull request a read-only
-  # token. It is safe here because the job checks out nothing at all and runs
-  # no code from the contribution: the labeler fetches its rules from the base
-  # branch through the API. The full reasoning is in the header of
-  # pr-automation.yml.
+  # `pull_request_target` is required to label, or reply to, pull requests that
+  # arrive from forks — a `pull_request` trigger gives a fork's pull request a
+  # read-only token. Both workflows below are safe for the same reason: they
+  # check out nothing and run no code from the contribution.
+  #
+  #   pr-automation.yml — the labeler fetches its rules from the base branch
+  #                       through the API; full reasoning in its header.
+  #   welcome.yml       — posts fixed text on a first pull request.
+  #
+  #   issue-claims.yml  — `issue_comment`, for the `/assign` and `/unassign`
+  #                       commands. It also checks out nothing; the comment is
+  #                       read from `context.payload` inside JavaScript and never
+  #                       interpolated into a script or shell, and it can only
+  #                       assign the commenter to the issue they commented on.
+  #
+  # Any NEW workflow on these triggers must be reviewed against the same rule
+  # and added here explicitly; a blanket ignore would hide the next mistake.
   # ----------------------------------------------------------------------------
   dangerous-triggers:
     ignore:
       - pr-automation.yml
+      - welcome.yml
+      - issue-claims.yml

@@ -1,0 +1,34 @@
+title: '[Q&A] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask anything about contributing, the codebase, setup, or the club's open-source work. There are no silly questions here.
+
+        Found a bug or want a feature? Please open an [issue](https://github.com/Open-Source-Software-Club/OSS_website/issues/new/choose) instead, so it can be triaged and claimed. Security problems go to the [security policy](https://github.com/Open-Source-Software-Club/OSS_website/security/policy), never here.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and where are you stuck?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you've tried
+      description: Commands you ran, links you read, error messages (paste them as text, not screenshots). Leave blank if you haven't started.
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Setting up the project locally
+        - Git, branches, commits or pull requests
+        - Checks / CI failing on my pull request
+        - Frontend (pages, components, styles)
+        - Backend (API, Supabase, GitHub sync)
+        - Something else
+    validations:
+      required: true

@@ -1,0 +1,227 @@
+# ==============================================================================
+# Issue claims — `/assign`, `/unassign`, and the 7-day inactivity policy
+#
+# Docs: CONTRIBUTING.md ("Claiming an Issue") · GOVERNANCE.md
+#
+# CONTRIBUTING.md has always said: comment to claim an issue, wait to be
+# assigned, and lose the assignment after 7 quiet days. Doing that by hand
+# meant a claim waited for a maintainer to notice it, and two pull requests
+# (#51, #58) ended up building the same scaffold. This workflow is that policy,
+# applied the moment someone asks:
+#
+#   /assign     claim an open, triaged, unassigned issue
+#   /unassign   give it back
+#
+# and, once a day, for issues claimed this way (labelled `in progress`):
+#
+#   7 days with no comment from the assignee and no open pull request that
+#   closes the issue  → a reminder;
+#   7 more days after the reminder with still nothing → the issue is released.
+#
+# SAFETY: `issue_comment` runs with this repository's token, so nothing from a
+# comment is ever interpolated into a script or a shell command — the comment is
+# read from `context.payload` inside JavaScript — and nothing is checked out.
+# ==============================================================================
+
+name: Issue Claims
+
+on:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '30 4 * * *' # daily, 10:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  command:
+    name: Handle /assign and /unassign
+    # Issues only (a pull request is also an "issue" to this event), and only
+    # comments that start with a command, so ordinary comments start nothing.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/assign') ||
+       startsWith(github.event.comment.body, '/unassign'))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # assign, label, reply
+    concurrency:
+      group: issue-claims-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    timeout-minutes: 5
+    steps:
+      - name: Apply the command
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            // Non-maintainers may hold this many open claims at once, so one
+            // person cannot reserve the whole backlog.
+            const MAX_CLAIMS = 2;
+            const MAINTAINER = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const NOT_CLAIMABLE = ['needs triage', 'blocked', 'wontfix', 'duplicate', 'invalid'];
+            const REPO_URL = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            const GOOD_FIRST = `${REPO_URL}/labels/good%20first%20issue`;
+
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            const comment = context.payload.comment;
+            const user = comment.user.login;
+            if (comment.user.type === 'Bot') return;
+
+            const command = comment.body.trim().split(/\s+/)[0].toLowerCase();
+            const labels = issue.labels.map((label) => label.name);
+            const assignees = issue.assignees.map((assignee) => assignee.login);
+            const reply = (body) =>
+              github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
+
+            if (command === '/assign') {
+              if (issue.state !== 'open') {
+                return reply(`@${user} this issue is closed, so it can't be claimed.`);
+              }
+              if (assignees.includes(user)) {
+                return reply(`@${user} you're already assigned to this issue.`);
+              }
+              if (assignees.length > 0) {
+                return reply(
+                  `@${user} this issue is already assigned to ${assignees.map((a) => `@${a}`).join(', ')}. ` +
+                  `Have a look at the [good first issues](${GOOD_FIRST}), or ask here whether a second pair of hands is wanted.`);
+              }
+              const blocking = NOT_CLAIMABLE.filter((label) => labels.includes(label));
+              if (blocking.length > 0) {
+                return reply(
+                  `@${user} this issue is labelled ${blocking.map((l) => `\`${l}\``).join(', ')}, so it isn't ready ` +
+                  `to be worked on yet. A maintainer will update it — or pick one of the [good first issues](${GOOD_FIRST}).`);
+              }
+
+              if (!MAINTAINER.includes(comment.author_association)) {
+                const mine = await github.paginate(github.rest.issues.listForRepo, {
+                  owner, repo, assignee: user, state: 'open', per_page: 100,
+                });
+                const claimed = mine.filter((item) => !item.pull_request);
+                if (claimed.length >= MAX_CLAIMS) {
+                  return reply(
+                    `@${user} you already have ${claimed.length} open issues assigned ` +
+                    `(${claimed.map((item) => `#${item.number}`).join(', ')}). Finish one, or comment \`/unassign\` ` +
+                    `on it, before claiming another — that way everyone gets a turn.`);
+                }
+              }
+
+              await github.rest.issues.addAssignees({ owner, repo, issue_number: issue.number, assignees: [user] });
+
+              // GitHub silently ignores an assignee it will not accept; check.
+              const { data: updated } = await github.rest.issues.get({ owner, repo, issue_number: issue.number });
+              if (!updated.assignees.some((assignee) => assignee.login === user)) {
+                core.warning(`GitHub did not accept ${user} as an assignee of #${issue.number}.`);
+                return reply(
+                  `@${user} GitHub didn't accept the assignment automatically, so a maintainer will need to assign you ` +
+                  `by hand. Please wait for that before starting, so two people don't end up doing the same work.`);
+              }
+
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['in progress'] });
+              return reply([
+                `@${user} this issue is yours — thank you for picking it up!`,
+                '',
+                `- Read [CONTRIBUTING.md](${REPO_URL}/blob/main/CONTRIBUTING.md) for the setup and the branch and commit conventions.`,
+                `- Put \`Closes #${issue.number}\` in your pull request's description so it links here.`,
+                '- Stuck? Ask in a comment here — questions are welcome at every step.',
+                '',
+                'If there is no comment from you and no linked pull request for **7 days** you\'ll get a reminder, and ' +
+                '7 days after that the issue is released for someone else. Comment `/unassign` any time if you can\'t continue.',
+              ].join('\n'));
+            }
+
+            if (command === '/unassign') {
+              if (!assignees.includes(user)) {
+                return reply(`@${user} you're not assigned to this issue, so there's nothing to give back.`);
+              }
+              await github.rest.issues.removeAssignees({ owner, repo, issue_number: issue.number, assignees: [user] });
+              if (labels.includes('in progress')) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: 'in progress' });
+              }
+              return reply(`@${user} you've been unassigned — thanks for letting us know. This issue is open for someone else to \`/assign\`.`);
+            }
+
+  inactivity:
+    name: Remind or release inactive claims
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # comment, unassign, unlabel
+      pull-requests: read # find pull requests that close an issue
+    timeout-minutes: 10
+    steps:
+      - name: Sweep claimed issues
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const DAY = 24 * 60 * 60 * 1000;
+            const REMIND_AFTER_DAYS = 7;
+            const RELEASE_AFTER_REMINDER_DAYS = 7;
+            const MARKER = '<!-- issue-claims:reminder -->';
+            const { owner, repo } = context.repo;
+
+            // Only claims made through /assign carry `in progress`; issues a
+            // maintainer assigned by hand are left alone.
+            const claimed = (await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'in progress', per_page: 100,
+            })).filter((issue) => !issue.pull_request && issue.assignees.length > 0);
+
+            let reminded = 0;
+            let released = 0;
+            for (const issue of claimed) {
+              const { repository } = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                   repository(owner: $owner, name: $repo) {
+                     issue(number: $number) { closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { totalCount } }
+                   }
+                 }`,
+                { owner, repo, number: issue.number });
+              if (repository.issue.closedByPullRequestsReferences.totalCount > 0) continue; // work is in review
+
+              const assignee = issue.assignees[0].login;
+              const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner, repo, issue_number: issue.number, per_page: 100,
+              });
+
+              // The assignee's latest sign of life: being assigned, commenting,
+              // or referencing the issue from a commit or pull request.
+              let lastActivity = 0;
+              let lastReminder = 0;
+              for (const event of timeline) {
+                const at = Date.parse(event.created_at || event.updated_at || '') || 0;
+                if (event.event === 'assigned' && event.assignee?.login === assignee) lastActivity = Math.max(lastActivity, at);
+                if (event.event === 'commented' && event.user?.login === assignee) lastActivity = Math.max(lastActivity, at);
+                if (event.event === 'cross-referenced' && event.actor?.login === assignee) lastActivity = Math.max(lastActivity, at);
+                if (event.event === 'commented' && (event.body || '').includes(MARKER)) lastReminder = Math.max(lastReminder, at);
+              }
+              if (!lastActivity) continue;
+
+              const now = Date.now();
+              const remindedSinceActivity = lastReminder > lastActivity;
+
+              if (remindedSinceActivity && now - lastReminder >= RELEASE_AFTER_REMINDER_DAYS * DAY) {
+                await github.rest.issues.removeAssignees({ owner, repo, issue_number: issue.number, assignees: [assignee] });
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: 'in progress' }).catch(() => {});
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `@${assignee} this issue has been released because there was no activity for two weeks — no hard feelings, ` +
+                        `and thank you for the time you put in. You're welcome to \`/assign\` it again whenever you're ready. ` +
+                        `It's now open for anyone to claim.`,
+                });
+                released += 1;
+              } else if (!remindedSinceActivity && now - lastActivity >= REMIND_AFTER_DAYS * DAY) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: `${MARKER}\n@${assignee} just checking in — how is this going? A quick comment (even "still on it" or ` +
+                        `"stuck on X") keeps it yours. If there's no comment and no linked pull request in the next 7 days, ` +
+                        `the issue will be released for someone else. Comment \`/unassign\` if you'd rather hand it on.`,
+                });
+                reminded += 1;
+              }
+            }
+
+            core.summary.addRaw(`## Issue claims\n\n${claimed.length} claimed issue(s) checked: ${reminded} reminded, ${released} released.\n`);
+            await core.summary.write();

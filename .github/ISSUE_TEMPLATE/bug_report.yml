@@ -1,7 +1,7 @@
 name: Bug Report
 description: Create a report to help us fix a bug in the OSS Club Website
 title: "[Bug]: "
-labels: ["bug", "needs triage"]
+labels: ["type: bug", "needs triage"]
 body:
   - type: markdown
     attributes:
@@ -96,3 +96,12 @@ body:
       placeholder: Any other relevant information or context...
     validations:
       required: false
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the [open and closed issues](https://github.com/Open-Source-Software-Club/OSS_website/issues?q=is%3Aissue) and this has not been reported yet.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/Open-Source-Software-Club/OSS_website/blob/main/CODE_OF_CONDUCT.md).
+          required: true
