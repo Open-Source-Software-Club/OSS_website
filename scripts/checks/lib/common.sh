@@ -70,26 +70,87 @@ list_tracked_files() {
 
 # ------------------------------------------------------------------------------
 # Binary detection — text-only checks must not run against images or fonts.
+#
+# A file is binary when it has a known binary extension, or when it contains a
+# NUL byte near its start (the heuristic git itself uses).
+#
+# Everything here is byte-oriented and pinned to LC_ALL=C. The previous version
+# compared `${#chunk}` of `chunk="$(head -c 8000 file)"` against `wc -c`, which
+# was wrong twice over: command substitution silently drops NUL bytes, so a
+# real binary was never detected, and under a UTF-8 locale `${#chunk}` counts
+# characters while `wc -c` counts bytes, so every text file containing "—", "✓"
+# or "©" was classified as binary and skipped. The GitHub runners use C.UTF-8:
+# on main the secret scan read 12 of 75 tracked files.
 # ------------------------------------------------------------------------------
-# shellcheck disable=SC2034  # consumed by the scripts that source this file
-BINARY_EXTENSIONS='png|jpg|jpeg|gif|webp|avif|bmp|ico|icns|pdf|woff|woff2|ttf|otf|eot|mp3|mp4|webm|mov|zip|gz|tgz|tar|rar|7z|wasm|snap|jpeg'
-
-is_binary_file() {
-  local f="$1" chunk raw stripped
-  case "${f##*.}" in
+has_binary_extension() {
+  case "${1##*.}" in
     png|jpg|jpeg|gif|webp|avif|bmp|ico|icns|pdf|woff|woff2|ttf|otf|eot|mp3|mp4|webm|mov|zip|gz|tgz|tar|rar|7z|wasm)
       return 0 ;;
   esac
-  # Fallback: a NUL byte anywhere in the first 8 KB means "binary".
-  # `tr -d '\000'` is used rather than `grep -q $'\x00'` because a shell cannot
-  # pass a NUL byte inside an argument, which would silently match everything.
-  chunk="$(head -c 8000 -- "$f" 2>/dev/null || true)"
-  raw="${#chunk}"
-  stripped="$(printf '%s' "$chunk" | tr -d '\000' | wc -c | tr -d ' ')"
-  if [ "$raw" -ne "$stripped" ]; then
-    return 0
-  fi
   return 1
+}
+
+is_binary_file() {
+  local f="$1" nul_bytes
+  has_binary_extension "$f" && return 0
+  # Count the NUL bytes in the first 8 KB straight from the byte stream: they
+  # never pass through a shell variable, so none of them can be dropped.
+  nul_bytes="$(head -c 8000 -- "$f" 2>/dev/null | LC_ALL=C tr -dc '\000' | wc -c | tr -d ' ')"
+  [ "${nul_bytes:-0}" -gt 0 ]
+}
+
+# select_text_files <path>...
+#   Prints, one per line and in input order, the given paths that exist, are
+#   non-empty and are text. Empty files are left out: there is nothing in them
+#   for a content check to find.
+#
+#   One `grep` covers the whole list. Testing files one at a time cost several
+#   processes per file, and on Git for Windows — where most contributors run
+#   the hooks — process start-up is nearly the whole cost of these checks.
+select_text_files() {
+  local f
+  local -a candidates=()
+  for f in "$@"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    has_binary_extension "$f" && continue
+    candidates+=("$f")
+  done
+  [ "${#candidates[@]}" -gt 0 ] || return 0
+  # -I treats a file containing a NUL byte as matching nothing; an empty
+  # pattern matches every line, so -l lists every other non-empty file.
+  printf '%s\0' "${candidates[@]}" | LC_ALL=C xargs -0 grep -Il -e '' -- 2>/dev/null
+  return 0
+}
+
+# grep_text_files <grep arguments...>
+#   Runs one `grep -nH --null` over every path in the caller's TEXT_FILES array.
+#   Each hit is printed as "<path> NUL <line>:<text>", so a caller reads it with
+#
+#     while IFS= read -r -d '' file && IFS= read -r rest; do ...
+#
+#   and the path may contain any character, including ':'.
+grep_text_files() {
+  [ "${#TEXT_FILES[@]}" -gt 0 ] || return 0
+  printf '%s\0' "${TEXT_FILES[@]}" | LC_ALL=C xargs -0 grep -nH --null "$@" -- 2>/dev/null
+  return 0
+}
+
+# file_sizes <path>...
+#   Prints "<bytes> TAB <path>" for each existing path, in one `stat` process
+#   (GNU or BSD flavour) rather than one per file.
+file_sizes() {
+  local f
+  local -a existing=()
+  for f in "$@"; do
+    [ -n "$f" ] && [ -f "$f" ] && existing+=("$f")
+  done
+  [ "${#existing[@]}" -gt 0 ] || return 0
+  if stat -c '%s' -- "${existing[0]}" >/dev/null 2>&1; then
+    printf '%s\0' "${existing[@]}" | xargs -0 stat -c $'%s\t%n' -- 2>/dev/null
+  else
+    printf '%s\0' "${existing[@]}" | xargs -0 stat -f $'%z\t%N' -- 2>/dev/null
+  fi
+  return 0
 }
 
 # ------------------------------------------------------------------------------

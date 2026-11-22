@@ -91,14 +91,18 @@ FORBIDDEN_GLOBS=(
   '.arena/*' '.playwright-cli/*'
 )
 
-# Match a repo-relative path against the forbidden glob list.
+# Match a repo-relative path against the forbidden glob list. The matching glob
+# is returned in MATCHED rather than printed: capturing it with "$(...)" forked
+# a subshell for every tracked file, which is most of this check's run time on
+# Git for Windows.
+MATCHED=''
 matches_forbidden() {
   local f="$1" pat base
   base="${f##*/}"
   for pat in "${FORBIDDEN_GLOBS[@]}"; do
     # shellcheck disable=SC2053
     if [[ "$f" == $pat || "$base" == $pat ]]; then
-      printf '%s' "$pat"
+      MATCHED="$pat"
       return 0
     fi
   done
@@ -109,8 +113,9 @@ load_allowlist "$ALLOWED_FILES_LIST"
 
 violations=0
 if [ "$STAGED" -eq 1 ]; then
-  # Pre-commit path: only police what is about to be committed.
-  mapfile -t TO_CHECK < <(git diff --cached --name-only --diff-filter=ACM -z 2>/dev/null | tr '\0' '\n')
+  # Pre-commit path: only police what is about to be committed. Renames (R)
+  # are included, so `git mv notes.txt .env` cannot slip through.
+  mapfile -t TO_CHECK < <(git diff --cached --name-only --diff-filter=ACMR -z 2>/dev/null | tr '\0' '\n')
 else
   mapfile -t TO_CHECK < <(list_tracked_files)
 fi
@@ -122,7 +127,8 @@ for file in "${TO_CHECK[@]:-}"; do
     continue
   fi
 
-  if matched="$(matches_forbidden "$file")"; then
+  if matches_forbidden "$file"; then
+    matched="$MATCHED"
     record_error "$file (matched '$matched')" \
       "Forbidden file tracked by git: $file — remove it with 'git rm --cached $file' and ensure .gitignore covers it."
     violations=$((violations + 1))

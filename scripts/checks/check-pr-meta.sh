@@ -40,6 +40,10 @@ FAIL_FILES=300
 
 TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release'
 TITLE_RE="^($TYPES)(\\([a-z0-9][a-z0-9._/-]*\\))?(!)?: .+"
+# GitHub's "Revert" button titles its pull request 'Revert "<original title>"'.
+# Accepting that form keeps the one-click revert usable in an emergency; it is
+# the same exception commitlint makes by default.
+REVERT_TITLE_RE='^Revert ".+"$'
 ISSUE_RE='(Closes|Close|Fixes|Fix|Resolves|Resolve|Refs|Related to|Implements) +#[0-9]+'
 
 log_header "Pull request discipline"
@@ -62,6 +66,8 @@ log_ok "PR #$PR_NUMBER: '$PR_TITLE' ($PR_HEAD_REF -> $PR_BASE_REF)"
 # ------------------------------------------------------------------------------
 if printf '%s' "$PR_TITLE" | grep -Eq -- "$TITLE_RE"; then
   log_ok "PR title follows Conventional Commits"
+elif printf '%s' "$PR_TITLE" | grep -Eq -- "$REVERT_TITLE_RE"; then
+  log_ok "PR title is a GitHub revert of an earlier pull request"
 else
   record_error "PR title '$PR_TITLE' is not a Conventional Commit" \
     "PR titles become squash-merge commit messages on main, so they must follow Conventional Commits: '<type>(<scope>): <subject>'. Got: '$PR_TITLE'. Example: 'feat(events): add RSVP button'."
@@ -141,7 +147,9 @@ fi
 # ------------------------------------------------------------------------------
 # 7. Files that must never appear in a PR, checked against the actual diff.
 # ------------------------------------------------------------------------------
-changed="$(git diff --name-only "origin/$PR_BASE_REF...HEAD" 2>/dev/null || true)"
+# --diff-filter=d leaves out deletions: a pull request that REMOVES an
+# accidentally committed .env is the fix, not the offence.
+changed="$(git diff --name-only --diff-filter=d "origin/$PR_BASE_REF...HEAD" 2>/dev/null || true)"
 if [ -n "$changed" ]; then
   banned=""
   while IFS= read -r f; do

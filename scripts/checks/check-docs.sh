@@ -90,7 +90,11 @@ LINK_COUNT=0
 
 for file in "${DOC_FILES[@]}"; do
   [ -f "$file" ] || continue
-  dir="$(dirname "$file")"
+  # Parameter expansion rather than "$(dirname ...)": no fork per document.
+  case "$file" in
+    */*) dir="${file%/*}" ;;
+    *)   dir='.' ;;
+  esac
 
   # Strip fenced code blocks first: a shell snippet or an example link inside a
   # fence is sample text, not a link that has to resolve.

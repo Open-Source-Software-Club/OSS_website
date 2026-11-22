@@ -9,10 +9,13 @@
 #
 #   ./scripts/install-hooks.sh
 #
-# The same thing happens automatically the moment `package.json` exists, via a
-# `prepare` script:
+# Once package.json exists, add a `prepare` script so `pnpm install` does this
+# for every contributor automatically:
 #
-#   "prepare": "node scripts/install-hooks.mjs"
+#   "prepare": "git config core.hooksPath .githooks || true"
+#
+# (`|| true` keeps installs working where there is no .git directory, such as
+# a Vercel build.)
 #
 # To remove the hooks:  git config --unset core.hooksPath
 # To bypass a single run: git commit --no-verify / git push --no-verify

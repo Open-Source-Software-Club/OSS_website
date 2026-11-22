@@ -33,23 +33,17 @@ SOFT_LIMIT=$((512 * 1024))    # 512 KiB
 load_allowlist "$LARGE_FILES_LIST"
 
 if [ "$STAGED" -eq 1 ]; then
-  mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM -z 2>/dev/null | tr '\0' '\n')
+  mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR -z 2>/dev/null | tr '\0' '\n')
 else
   mapfile -t FILES < <(list_tracked_files)
 fi
 
 oversized=0
 
-for file in "${FILES[@]:-}"; do
+# Byte sizes for the whole list in one `stat` (GNU or BSD), not one per file.
+while IFS=$'\t' read -r size file; do
   [ -z "$file" ] && continue
-  [ -f "$file" ] || continue
-
-  # Byte size, portable across GNU and BSD stat.
-  if size=$(stat -c %s -- "$file" 2>/dev/null); then
-    :
-  else
-    size=$(stat -f %z -- "$file" 2>/dev/null || echo 0)
-  fi
+  case "$size" in ''|*[!0-9]*) continue ;; esac
 
   if [ "$size" -gt "$HARD_LIMIT" ]; then
     if is_allowlisted "$file"; then
@@ -62,7 +56,7 @@ for file in "${FILES[@]:-}"; do
   elif [ "$size" -gt "$SOFT_LIMIT" ]; then
     log_warn "$file is $(human_size "$size") — approaching the 1 MiB limit"
   fi
-done
+done < <(file_sizes "${FILES[@]:-}")
 
 if [ "$oversized" -eq 0 ]; then
   log_ok "All files are under the 1 MiB limit"

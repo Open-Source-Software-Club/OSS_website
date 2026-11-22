@@ -28,6 +28,10 @@ set -uo pipefail
 
 TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release|wip'
 HEADER_RE="^($TYPES)(\\([a-z0-9][a-z0-9._/-]*\\))?(!)?: [^ ]"
+# `git revert` and GitHub's Revert button both write 'Revert "<original>"'.
+# commitlint accepts that form by default; rejecting it blocks an emergency
+# revert behind a reword nobody needs.
+REVERT_RE='^Revert ".+"$'
 MAX_SUBJECT=72
 MAX_BODY=100
 
@@ -38,6 +42,13 @@ check_message() {
   local header line n=0 ok=1
 
   header="$(printf '%s' "$msg" | head -1)"
+
+  # A generated revert header is valid as-is and has no "type: subject" to
+  # measure, so the subject rules below do not apply to it.
+  if printf '%s' "$header" | grep -Eq -- "$REVERT_RE"; then
+    log_ok "$label is a revert of an earlier commit"
+    return 0
+  fi
 
   # Rule 1 + 2: header shape and type.
   if ! printf '%s' "$header" | grep -Eq -- "$HEADER_RE"; then

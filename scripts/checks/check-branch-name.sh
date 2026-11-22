@@ -39,6 +39,11 @@ AUTOMATION='^(dependabot|renovate|arena|codex|agent|copilot|github-actions|previ
 # Release / support trains.
 RELEASE='^(release|hotfix|support)/[a-z0-9][a-z0-9._-]*$'
 
+# The branch GitHub's "Revert" button creates: revert-<PR number>-<head branch>.
+# Rejecting it made the one-click revert of #49 fail CI (#55) and forced a
+# hand-made replacement; a revert is exactly when nobody should be fighting CI.
+GITHUB_REVERT='^revert-[0-9]+-.+'
+
 # The documented contribution convention.
 CONVENTIONAL='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)/[a-z0-9][a-z0-9._-]*$'
 
@@ -48,6 +53,8 @@ elif [[ "$BRANCH" =~ $AUTOMATION ]]; then
   log_ok "'$BRANCH' is an automation/session branch (allowlisted)"
 elif [[ "$BRANCH" =~ $RELEASE ]]; then
   log_ok "'$BRANCH' follows the release-train convention"
+elif [[ "$BRANCH" =~ $GITHUB_REVERT ]]; then
+  log_ok "'$BRANCH' was created by GitHub's Revert button"
 elif [[ "$BRANCH" =~ $CONVENTIONAL ]]; then
   log_ok "'$BRANCH' follows the contribution convention"
 else

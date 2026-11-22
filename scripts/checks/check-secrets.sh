@@ -71,75 +71,66 @@ PLACEHOLDER_RE='PLACEHOLDER|CHANGEME|CHANGE_ME|REDACTED|<[A-Za-z0-9_ -]+>|xxxx+|
 # ------------------------------------------------------------------------------
 if [ "$STAGED" -eq 1 ]; then
   # Pre-commit: only what is about to be committed, deleted files excluded.
-  mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM -z 2>/dev/null | tr '\0' '\n')
+  # Renames (R) are included: `git mv` plus an edit is still new content.
+  mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR -z 2>/dev/null | tr '\0' '\n')
 else
   mapfile -t FILES < <(list_tracked_files)
 fi
 
-scanned=0
-skipped=0
-
+existing=0
 for file in "${FILES[@]:-}"; do
-  [ -z "$file" ] && continue
-  [ -f "$file" ] || continue
+  [ -n "$file" ] && [ -f "$file" ] && existing=$((existing + 1))
+done
 
-  if is_binary_file "$file"; then
-    skipped=$((skipped + 1))
+mapfile -t TEXT_FILES < <(select_text_files "${FILES[@]:-}")
+scanned=${#TEXT_FILES[@]}
+skipped=$((existing - scanned))
+
+HIGH_CONFIDENCE_RE="$PRIVATE_KEY_RE|$GITHUB_TOKEN_RE|$AWS_KEY_ID_RE|$AWS_SECRET_RE|$GOOGLE_API_RE|$SLACK_TOKEN_RE|$SLACK_WEBHOOK_RE|$STRIPE_RE|$NPM_TOKEN_RE|$SENDGRID_RE|$TWILIO_RE|$SUPABASE_JWT_RE"
+
+# --- high-confidence patterns ---------------------------------------------
+# One grep over every text file per pattern set. Hits are rare, so the
+# per-hit classification below costs nothing on a clean tree.
+while IFS= read -r -d '' file && IFS= read -r rest; do
+  lineno="${rest%%:*}"
+  text="${rest#*:}"
+
+  if printf '%s' "$text" | grep -Eq -- "$PLACEHOLDER_RE"; then
+    record_warning "$file:$lineno looks like a credential but is clearly a placeholder" \
+      "Possible placeholder secret at $file:$lineno — verify it is not a real value."
     continue
   fi
 
-  scanned=$((scanned + 1))
+  # Supabase service-role JWT is the highest-impact leak: always an error.
+  if printf '%s' "$text" | grep -Eq "$SUPABASE_JWT_RE" \
+     && printf '%s' "$text" | grep -Eqi -- "$SUPABASE_SERVICE_RE"; then
+    record_error "$file:$lineno contains a Supabase service-role key" \
+      "SECURITY: a Supabase service-role JWT was found at $file:$lineno. This key bypasses Row Level Security. Remove it from history (git filter-repo), rotate it in the Supabase dashboard, and force-push."
+    continue
+  fi
 
-  # --- high-confidence patterns -------------------------------------------
-  while IFS= read -r hit; do
-    [ -z "$hit" ] && continue
-    # grep -nH emits "path:lineno:text" — strip both prefixes so the reported
-    # line number is the real one, not the filename.
-    rest="${hit#*:}"
-    lineno="${rest%%:*}"
-    text="${rest#*:}"
+  record_error "$file:$lineno contains a credential-like string" \
+    "SECURITY: possible hardcoded credential at $file:$lineno. Remove it, move it to an environment variable, and rotate the exposed value."
+done < <(grep_text_files -E -e "$HIGH_CONFIDENCE_RE")
 
-    if printf '%s' "$text" | grep -Eq -- "$PLACEHOLDER_RE"; then
-      record_warning "$file:$lineno looks like a credential but is clearly a placeholder" \
-        "Possible placeholder secret at $file:$lineno — verify it is not a real value."
-      continue
-    fi
+# --- generic assignments ---------------------------------------------------
+while IFS= read -r -d '' file && IFS= read -r rest; do
+  lineno="${rest%%:*}"
+  text="${rest#*:}"
 
-    # Supabase service-role JWT is the highest-impact leak: always an error.
-    if printf '%s' "$text" | grep -Eq "$SUPABASE_JWT_RE" \
-       && printf '%s' "$text" | grep -Eqi -- "$SUPABASE_SERVICE_RE"; then
-      record_error "$file:$lineno contains a Supabase service-role key" \
-        "SECURITY: a Supabase service-role JWT was found at $file:$lineno. This key bypasses Row Level Security. Remove it from history (git filter-repo), rotate it in the Supabase dashboard, and force-push."
-      continue
-    fi
+  if printf '%s' "$text" | grep -Eq -- "$PLACEHOLDER_RE"; then
+    continue
+  fi
 
-    record_error "$file:$lineno contains a credential-like string" \
-      "SECURITY: possible hardcoded credential at $file:$lineno. Remove it, move it to an environment variable, and rotate the exposed value."
-  done < <(grep -nHE -- "$PRIVATE_KEY_RE|$GITHUB_TOKEN_RE|$AWS_KEY_ID_RE|$AWS_SECRET_RE|$GOOGLE_API_RE|$SLACK_TOKEN_RE|$SLACK_WEBHOOK_RE|$STRIPE_RE|$NPM_TOKEN_RE|$SENDGRID_RE|$TWILIO_RE|$SUPABASE_JWT_RE" -- "$file" 2>/dev/null)
+  if [ "$STRICT" -eq 1 ]; then
+    record_error "$file:$lineno contains a possible hardcoded secret" \
+      "Possible hardcoded secret at $file:$lineno (strict mode)."
+  else
+    record_warning "$file:$lineno contains a possible hardcoded secret" \
+      "Possible hardcoded secret at $file:$lineno — if it is real, remove it and rotate the value."
+  fi
+done < <(grep_text_files -E -e "$GENERIC_SECRET_RE")
 
-  # --- generic assignments -------------------------------------------------
-  while IFS= read -r hit; do
-    [ -z "$hit" ] && continue
-    # grep -nH emits "path:lineno:text" — strip both prefixes so the reported
-    # line number is the real one, not the filename.
-    rest="${hit#*:}"
-    lineno="${rest%%:*}"
-    text="${rest#*:}"
-
-    if printf '%s' "$text" | grep -Eq -- "$PLACEHOLDER_RE"; then
-      continue
-    fi
-
-    if [ "$STRICT" -eq 1 ]; then
-      record_error "$file:$lineno contains a possible hardcoded secret" \
-        "Possible hardcoded secret at $file:$lineno (strict mode)."
-    else
-      record_warning "$file:$lineno contains a possible hardcoded secret" \
-        "Possible hardcoded secret at $file:$lineno — if it is real, remove it and rotate the value."
-    fi
-  done < <(grep -nHE -- "$GENERIC_SECRET_RE" -- "$file" 2>/dev/null)
-done
-
-log_ok "Scanned $scanned text file(s), skipped $skipped binary file(s)"
+log_ok "Scanned $scanned text file(s), skipped $skipped binary or empty file(s)"
 
 finish "Secret scan"
