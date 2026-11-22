@@ -24,10 +24,18 @@ on:
   pull_request:
     branches: [main]
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+  # In the merge queue there is no pull request payload to validate, and
+  # nothing to validate: the title, branch and commits were checked on the
+  # pull request itself. The job below is skipped there, and a skipped job
+  # reports success, which is what lets a required check pass the queue.
+  merge_group:
+    types: [checks_requested]
 
 # Editing a title twice in a row should not leave two runs racing to report.
 concurrency:
-  group: pr-conventions-${{ github.event.pull_request.number }}
+  # Merge-group runs have no pull-request number; keyed on it alone, they
+  # would all share one group and cancel each other.
+  group: pr-conventions-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -36,6 +44,7 @@ permissions:
 jobs:
   pr-conventions:
     name: PR Conventions
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

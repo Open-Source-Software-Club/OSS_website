@@ -34,7 +34,7 @@ fi
 PROTECTED='^(main|master|develop|staging|production)$'
 
 # Automation and session branches.
-AUTOMATION='^(dependabot|renovate|arena|codex|agent|copilot|github-actions|preview|gh-pages)/.+'
+AUTOMATION='^(dependabot|renovate|arena|codex|agent|copilot|github-actions|preview|gh-pages|gh-readonly-queue)/.+'
 
 # Release / support trains.
 RELEASE='^(release|hotfix|support)/[a-z0-9][a-z0-9._-]*$'

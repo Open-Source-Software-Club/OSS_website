@@ -45,9 +45,21 @@ if [ ! -d "$RULESET_DIR" ]; then
   finish "Ruleset definitions"
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  log_warn "python3 is unavailable; skipping ruleset validation"
-  gha_notice "python3 is not installed, so the ruleset payloads were not validated."
+# Find an interpreter that actually RUNS. `command -v python3` is not enough: on
+# Windows it finds the Microsoft Store alias, which exists but only prints
+# "Python was not found" — and the empty output that produced was read as "no
+# problems", so the rulesets were reported valid without being validated.
+PYTHON=''
+for candidate in python3 python py; do
+  if "$candidate" -c 'import json, sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+    PYTHON="$candidate"
+    break
+  fi
+done
+
+if [ -z "$PYTHON" ]; then
+  log_warn "no working Python 3 interpreter; skipping ruleset validation"
+  gha_notice "Python 3 is not available, so the ruleset payloads were not validated. They are always validated in CI."
   finish "Ruleset definitions"
 fi
 
@@ -62,7 +74,7 @@ if [ -n "$stray" ]; then
   done <<< "$stray"
 fi
 
-findings="$(python3 - "$RULESET_DIR" <<'PY'
+findings="$("$PYTHON" - "$RULESET_DIR" <<'PY'
 import difflib
 import glob
 import json
@@ -100,6 +112,9 @@ PARAMETER_RULES = {
     'file_extension_restriction': ('restricted_file_extensions',),
     'max_file_path_length': ('max_file_path_length',),
     'max_file_size': ('max_file_size',),
+    'merge_queue': ('merge_method', 'grouping_strategy', 'min_entries_to_merge',
+                    'min_entries_to_merge_wait_minutes', 'max_entries_to_build',
+                    'max_entries_to_merge', 'check_response_timeout_minutes'),
 }
 
 ALL_RULES = TOGGLE_RULES | PATTERN_RULES | set(PARAMETER_RULES)
@@ -128,7 +143,10 @@ def workflow_contexts():
     try:
         import yaml
     except ImportError:
-        return None
+        return None, None
+    # Which events can emit each context. A merge queue only merges once every
+    # required check has reported on the `merge_group` event.
+    events_by_context = {}
 
     for path in sorted(glob.glob(os.path.join(workflow_dir, '*.yml')) +
                        glob.glob(os.path.join(workflow_dir, '*.yaml'))):
@@ -141,17 +159,30 @@ def workflow_contexts():
             continue
         if not isinstance(doc, dict):
             continue
+        # YAML 1.1 reads the key `on` as the boolean True.
+        triggers = doc.get('on', doc.get(True))
+        if isinstance(triggers, str):
+            events = {triggers}
+        elif isinstance(triggers, list):
+            events = set(triggers)
+        elif isinstance(triggers, dict):
+            events = set(triggers)
+        else:
+            events = set()
         for job_id, job in (doc.get('jobs') or {}).items():
             if not isinstance(job, dict):
                 continue
-            contexts.add(job_id)
+            names = {job_id}
             name = job.get('name')
             if isinstance(name, str) and name:
-                contexts.add(name)
-    return contexts
+                names.add(name)
+            for context in names:
+                contexts.add(context)
+                events_by_context.setdefault(context, set()).update(events)
+    return contexts, events_by_context
 
 
-contexts = workflow_contexts()
+contexts, events_by_context = workflow_contexts()
 
 # Relative paths keep the GitHub annotation file= readable in the Checks tab;
 # os.path.relpath is a no-op when the script is run as .github/... style paths.
@@ -271,11 +302,41 @@ for path in files:
                         f'would be permanently unmergeable.{hint}',
                     )
 
+        if rtype == 'merge_queue':
+            params = rule.get('parameters') or {}
+            if params.get('merge_method') not in {'MERGE', 'SQUASH', 'REBASE'}:
+                problem(path, 'merge_queue "merge_method" must be MERGE, SQUASH or REBASE.')
+            if params.get('grouping_strategy') not in {'ALLGREEN', 'HEADGREEN'}:
+                problem(path, 'merge_queue "grouping_strategy" must be ALLGREEN or HEADGREEN.')
+
+    # A merge queue merges only after every required check reports on the
+    # `merge_group` event. A required check whose workflow does not listen for
+    # it never reports in the queue, and every queued pull request waits for
+    # check_response_timeout_minutes and is then removed from the queue.
+    types = {rule.get('type') for rule in rules if isinstance(rule, dict)}
+    if 'merge_queue' in types and events_by_context is not None:
+        for rule in rules:
+            if not isinstance(rule, dict) or rule.get('type') != 'required_status_checks':
+                continue
+            for check in (rule.get('parameters') or {}).get('required_status_checks') or []:
+                context = (check or {}).get('context')
+                if context in events_by_context and 'merge_group' not in events_by_context[context]:
+                    problem(path, f'required status check {context!r} is emitted only by workflows that do not '
+                                  f'run on `merge_group`, so the merge queue would wait for it forever. Add '
+                                  f'`merge_group:` to that workflow\'s `on:`.')
+
 print('\n'.join(f'{p}\t{m}' for p, m in problems))
 PY
 )"
+validator_rc=$?
 
-if [ -n "$findings" ]; then
+# A validator that crashed produced no findings, which must not read as "valid".
+if [ "$validator_rc" -ne 0 ]; then
+  record_error "the ruleset validator exited with status $validator_rc" \
+    "check-rulesets.sh: the embedded validator failed (exit $validator_rc) with '$PYTHON', so the rulesets were NOT validated. Output: ${findings:-<none>}"
+fi
+
+if [ -n "$findings" ] && [ "$validator_rc" -eq 0 ]; then
   while IFS=$'\t' read -r file message; do
     [ -z "$file" ] && continue
     record_error "$(basename "$file"): $message" \

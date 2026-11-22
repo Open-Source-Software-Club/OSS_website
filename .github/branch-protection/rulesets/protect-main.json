@@ -27,11 +27,21 @@
     "which is a real barrier to a student's first contribution. It ships as an",
     "opt-in file instead: optional/require-signed-commits.json.",
     "",
-    "Note that .github/CODEOWNERS uses individual @usernames rather than",
-    "@Open-Source-Software-Club/* team names, because a CODEOWNERS entry that",
-    "references a team which does not exist matches nothing — and combined with",
+    "CODEOWNERS routes reviews to the @Open-Source-Software-Club/technical-leads",
+    "and /core-team teams. A team named there must exist and have write access",
+    "to this repository, or the entry matches nothing — and combined with",
     "'require_code_owner_review' that makes merges permanently impossible.",
-    "See the header of .github/CODEOWNERS for how to switch to teams."
+    "",
+    "--- MERGE QUEUE ----------------------------------------------------------",
+    "",
+    "Approved pull requests are merged through a merge queue rather than by",
+    "the author keeping their branch up to date. Before the queue, 'require",
+    "branches to be up to date' plus 'dismiss stale reviews' meant every change",
+    "to main forced each approved pull request to be updated and re-approved",
+    "(#38 waited a week that way). The queue tests each pull request on top of",
+    "the latest main itself, so the strict up-to-date policy is off: the queue",
+    "is what guarantees it. Every required check must run on the `merge_group`",
+    "event, or queued pull requests wait until check_response_timeout_minutes."
   ],
 
   "name": "Protect main",
@@ -69,7 +79,7 @@
     {
       "type": "required_status_checks",
       "parameters": {
-        "strict_required_status_checks_policy": true,
+        "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "Repository Hygiene" },
           { "context": "PR Conventions" },
@@ -77,6 +87,18 @@
           { "context": "Secret Scan" },
           { "context": "Dependency Review" }
         ]
+      }
+    },
+    {
+      "type": "merge_queue",
+      "parameters": {
+        "merge_method": "SQUASH",
+        "grouping_strategy": "ALLGREEN",
+        "min_entries_to_merge": 1,
+        "min_entries_to_merge_wait_minutes": 0,
+        "max_entries_to_build": 5,
+        "max_entries_to_merge": 5,
+        "check_response_timeout_minutes": 60
       }
     }
   ],

@@ -53,7 +53,8 @@
         "refs/heads/copilot/**",
         "refs/heads/github-actions/**",
         "refs/heads/preview/**",
-        "refs/heads/gh-pages"
+        "refs/heads/gh-pages",
+        "refs/heads/gh-readonly-queue/**"
       ]
     }
   },
