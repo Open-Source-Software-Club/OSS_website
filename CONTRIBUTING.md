@@ -240,7 +240,14 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0
 | `refactor`| Code change that neither fixes a bug nor adds a feature | `refactor(supabase): extract query client to helper` |
 | `perf` | Code change that improves runtime performance | `perf(images): enable AVIF format in next.config` |
 | `test` | Adding missing tests or correcting existing tests | `test(utils): add unit tests for date formatting` |
-| `chore` | Build process, tooling, or dependency updates | `chore(deps): update tailwindcss to v3.4.1` |
+| `build` | Build system or external dependency changes | `build(next): enable the standalone output` |
+| `ci` | CI configuration, workflows and the repository gate | `ci(e2e): pin the runner image for Playwright` |
+| `chore` | Tooling or dependency updates that touch neither the app nor CI | `chore(deps): update tailwindcss to v3.4.1` |
+| `revert` | Undoing an earlier change | `revert(events): remove the RSVP counter` |
+
+GitHub's **Revert** button produces a branch named `revert-<number>-<branch>` and
+a title `Revert "<original title>"`. Both are accepted as they are — you do not
+need to rename anything to revert a pull request.
 
 ### Good Commit Message Example:
 ```text
@@ -295,7 +302,7 @@ code ever leaves your machine:
 |:---|:---|
 | `pre-commit` | secrets, `.env` files, foreign lockfiles, build output, oversized files, trailing whitespace, tabs, CRLF |
 | `commit-msg` | commit messages that are not Conventional Commits |
-| `pre-push` | direct pushes to `main`, plus a re-run of the whole gate on your branch |
+| `pre-push` | direct pushes to `main`, plus a re-run of the file checks (secrets, forbidden and oversized files, whitespace, lockfiles) on the whole tree and of the commit-message check on the commits being pushed |
 
 Run the whole gate on demand at any time:
 
@@ -318,7 +325,8 @@ Your pull request cannot be merged unless all of these are true:
 - `pnpm lint`, `pnpm type-check`, `pnpm format:check`, `pnpm test` and
   `pnpm build` all pass
 - the branch contains **no merge commits** (we require a linear history)
-- at least one approving review, from a code owner for protected paths
+- at least one approving review from a code owner (CODEOWNERS has a `*` entry,
+  so every pull request has code owners)
 - all review conversations are resolved
 - the branch is up to date with `main`
 
@@ -362,11 +370,13 @@ git push origin <your-branch-name>
 2. You will see a banner prompting you to create a Pull Request from your branch. Click **Compare & pull request**.
 3. Set base branch to `main`.
 4. Give your PR a clear, descriptive title following Conventional Commits (e.g., `feat(events): add calendar export modal`).
-5. Fill out the PR template with:
-   - **Summary:** Concise description of changes.
-   - **Issue Reference:** `Fixes #<issue-number>` or `Closes #<issue-number>`.
-   - **Screenshots / GIFs:** Mandatory for any visual or UI changes (both light and dark modes).
-   - **Checklist:** Check off the items verifying tests, linting, and responsive design.
+5. Fill out the PR template, in particular:
+   - **Description:** Concise description of changes.
+   - **Related Issue:** `Fixes #<issue-number>` or `Closes #<issue-number>`.
+   - **Screenshots / Recordings:** Mandatory for any visual or UI changes (both light and dark modes).
+   - **How Has This Been Tested?** and the **Checklist:** tests, linting, and responsive design.
+6. If you got the title wrong, just edit it — the `PR Conventions` check re-runs
+   on its own. You do not need to push a new commit.
 
 ---
 
@@ -411,7 +421,7 @@ If this is your first time contributing to an open-source project on GitHub, fol
 - **Re-tagging a release:** `Protect release tags` blocks deleting or moving a `v*` tag, and only accepts `v<major>.<minor>.<patch>[-prerelease]`. If a release is wrong, cut the next patch — do not move the tag.
 - **Committing lockfiles from other tools:** Never commit `package-lock.json` or `yarn.lock`. Only `pnpm-lock.yaml` should exist.
 - **Pushing `.env.local` or sensitive secrets:** Never commit API keys or private tokens. The pre-commit hook and the `Secret Scan` CI check both block this, and GitHub push protection blocks it before it even reaches the repository.
-- **Creating giant monolithic PRs:** Keep PRs atomic and focused on a single issue. A PR that fixes three different bugs and redesigns two pages is difficult to review and will likely be rejected — and above 4000 changed lines it is rejected automatically by the PR Conventions check.
+- **Creating giant monolithic PRs:** Keep PRs atomic and focused on a single issue. A PR that fixes three different bugs and redesigns two pages is difficult to review and will likely be rejected — and above 10,000 changed lines or 300 files it is rejected automatically by the PR Conventions check (it warns from 400 lines or 20 files).
 - **Ignoring mobile responsiveness:** Always check your UI on mobile viewports (320px - 768px) and in both light and dark modes.
 
 ---

@@ -319,8 +319,8 @@ summary.
 
 | Check | Guarantees |
 |:---|:---|
-| **Repository Hygiene** | no forbidden files, no secrets, no oversized files, valid YAML, valid `CODEOWNERS` |
-| **PR Conventions** | Conventional Commit title, valid branch name, linked issue, reviewable size, linear history |
+| **Repository Hygiene** | no forbidden files, no oversized files, valid YAML, valid `CODEOWNERS` |
+| **PR Conventions** | Conventional Commit title, valid branch name, reviewable size, linear history (re-runs when you edit the title) |
 | **Verify** | ESLint · TypeScript · Prettier · Vitest · `next build` |
 | **Secret Scan** | no credential material in any tracked file, no private keys |
 | **Dependency Review** | no new moderate-or-higher vulnerability, no disallowed licence |

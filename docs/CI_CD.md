@@ -68,9 +68,9 @@ machine" version of the rules.
 │                │ │                   │ │                   │ │                    │
 │ Repository     │ │ Secret Scan       │ │ CodeQL Analysis   │ │ Database           │
 │ Hygiene        │ │ Dependency Review │ │                   │ │ (Migrations & RLS) │
-│ PR Conventions │ │                   │ │                   │ │                    │
-│ Verify         │ └───────────────────┘ └───────────────────┘ └────────────────────┘
-│ Accessibility  │
+│ Verify         │ │                   │ │                   │ │                    │
+│ Accessibility  │ └───────────────────┘ └───────────────────┘ └────────────────────┘
+│                │
 └───────┬────────┘ ┌───────────────────┐ ┌───────────────────┐ ┌────────────────────┐
         │         │ e2e.yml           │ │ labels-sync.yml   │ │ reconcile.yml      │
         │         │ End-to-End Tests  │ │ label taxonomy    │ │ scheduled sync     │
@@ -84,6 +84,10 @@ machine" version of the rules.
         │         │ security.yml      │ │ supply-chain      │ │ release notes      │
         │         │ zizmor audit      │ │ posture           │ │ (never publishes)  │
         │         └───────────────────┘ └───────────────────┘ └────────────────────┘
+        │         ┌───────────────────┐
+        │         │ pr-conventions.yml│
+        │         │ PR Conventions    │
+        │         └───────────────────┘
         │
         ▼
    Vercel (Preview per PR, Production on main) — native Git integration.
@@ -104,8 +108,8 @@ request can be merged. They are applied by
 
 | Check | Workflow | What it guarantees |
 |---|---|---|
-| `Repository Hygiene` | `ci.yml` | no forbidden files, no secrets, no oversized files, valid YAML, valid CODEOWNERS, valid ruleset payloads, clean whitespace |
-| `PR Conventions` | `ci.yml` | Conventional Commit title, valid branch name, linked issue, reviewable size, linear history |
+| `Repository Hygiene` | `ci.yml` | no forbidden files, no oversized files, valid YAML, valid CODEOWNERS, valid ruleset payloads, clean whitespace (credentials are `Secret Scan`'s job) |
+| `PR Conventions` | `pr-conventions.yml` | Conventional Commit title, valid branch name, reviewable size, linear history (a linked issue is a warning, not a requirement). Re-runs when the title, description or labels change, so fixing a title needs no new commit |
 | `Verify (Lint · Types · Tests · Build)` | `ci.yml` | ESLint, TypeScript, Prettier, Vitest and `next build` all pass |
 | `Secret Scan` | `security.yml` | no credential material in any tracked file, no private keys by filename |
 | `Dependency Review` | `security.yml` | no new moderate-or-higher vulnerability, no disallowed licence |
@@ -182,6 +186,14 @@ not reported. `--strict` promotes warnings to errors; CI uses `--strict`.
 A full-history Gitleaks sweep runs in addition when `GITLEAKS_LICENSE` is
 configured (see §8).
 
+**Binary detection is byte-based and locale-independent** (`select_text_files`
+in `lib/common.sh`). An earlier version compared a character count against a
+byte count, so under the runners' `C.UTF-8` locale any file containing a
+non-ASCII character — an em dash, a ✓, a © — was classified as binary and
+skipped: on `main` the scan covered 12 of 75 tracked files. The log line
+`Scanned N text file(s), skipped M binary or empty file(s)` is the thing to
+watch; `M` should be the number of images and fonts, nothing more.
+
 ### 4.3 Lockfile policy — `check-lockfiles.sh`
 
 `pnpm-lock.yaml` is the only lockfile allowed. If `package.json` exists,
@@ -203,17 +215,34 @@ CRLF, exactly one trailing newline, no BOM (warning), no lines over 400
 characters (warning). These are the defects that produce 400-line "formatting
 only" diffs and make `git blame` useless.
 
+CRLF is read from `git ls-files --eol`, and specifically from the **index**
+column: that is what gets committed. `grep $'\r'` cannot do this job on Windows —
+GNU grep there strips the carriage return before matching unless given `-U` — and
+a Windows clone with `core.autocrlf` legitimately has CRLF in its working tree.
+
+**Speed.** The gate runs on every `git push`, so it is written to cost a fixed
+handful of processes rather than a dozen per file: one `grep` decides which files
+are text, one `grep` per secret pattern set, one `awk` pass for every line-level
+hygiene rule, one `tail` for final newlines, one `stat` for sizes. On Git for
+Windows — where process start-up is nearly the whole cost — the full gate went
+from 63 s to 4 s on a 75-file tree, and it no longer grows by seconds for every
+file the application adds.
+
 ### 4.6 Branch naming — `check-branch-name.sh`
 
 `<type>/<short-description>` where type is `feat|fix|docs|style|refactor|perf|
 test|build|ci|chore|revert`. `main`, `develop`, `staging`, `release/*`,
-`hotfix/*`, `dependabot/*` and `arena/*` are allowlisted.
+`hotfix/*`, `dependabot/*` and `arena/*` are allowlisted, and so is
+`revert-<number>-<branch>`, the name GitHub's **Revert** button gives the branch
+it creates.
 
 ### 4.7 Commit messages — `check-commit-msg.sh`
 
 Conventional Commits, because the project squash-merges and the PR title becomes
 the commit on `main`, and because `CHANGELOG.md` is generated from these
-headers.
+headers. A `Revert "<original subject>"` header — what `git revert` and GitHub's
+Revert button write — is accepted as-is, as commitlint does; the `PR Conventions`
+title check accepts the same form.
 
 ### 4.8 Pull-request discipline — `check-pr-meta.sh`
 
@@ -234,7 +263,14 @@ headers.
   history, and easy to revoke — and every use emits a warning in the Checks tab
   so nobody forgets why.
 - **No merge commits** in the pull request (linear history)
-- No forbidden files in the diff
+- No forbidden files *added or modified* in the diff — deleting one is the fix,
+  so deletions are not reported
+
+These run in `pr-conventions.yml`, which re-runs on `edited`, `labeled` and
+`unlabeled` as well as on a push. A Re-run replays the original event, so when
+this job lived in `ci.yml` a corrected title or a newly applied `size: exempt`
+label could never turn it green without a new commit. All three validation steps
+run even when an earlier one fails, so one run reports every problem.
 
 ### 4.9 The workflows themselves — `Workflow Security` (`zizmor`)
 
@@ -519,17 +555,18 @@ the team wants to read the rule insights before anything is rejected.
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| `ci.yml` | PR, push to `main`, manual | Repository Hygiene · PR Conventions · Verify · Accessibility |
+| `ci.yml` | PR, push to `main`, manual | Repository Hygiene · Verify · Accessibility |
+| `pr-conventions.yml` | PR opened / edited / synchronised / reopened / labelled / unlabelled | PR Conventions |
 | `security.yml` | PR, push to `main`, weekly, manual | Secret Scan · Dependency Review |
 | `codeql.yml` | PR, push to `main`, weekly, manual | CodeQL Analysis |
 | `db-check.yml` | PR touching `supabase/**`, push to `main` | Database (Migrations & RLS Tests) |
-| `e2e.yml` | PR touching tests, push to `main` | End-to-End Tests |
-| `pr-automation.yml` | PR opened / synchronised | Apply labels from the diff |
-| `labels-sync.yml` | weekly, on `labels.yml` change, manual | Sync labels (this repo) · Sync labels (org) |
-| `reconcile.yml` | every 15 minutes, manual | Reconcile GitHub cache |
-| `db-migrate.yml` | manual only, environment-gated | Preflight · Apply migrations |
-| `stale.yml` | weekly | Stale PRs · Delete merged branches |
-| `protect-main.yml` | push to `main` | Audit direct pushes |
+| `e2e.yml` | PR and push to `main`, except documentation-only changes | End-to-End Tests |
+| `pr-automation.yml` | PR opened / edited / synchronised / reopened | Apply labels from the diff |
+| `labels-sync.yml` | weekly, on a `labels.yml` change reaching `main`, manual | Sync labels (this repository) · Sync labels (all organisation repositories) |
+| `reconcile.yml` | every 15 minutes once `SITE_URL` is set, manual | Reconcile GitHub cache |
+| `db-migrate.yml` | manual only, environment-gated; production only from `main` | Preflight checks · Apply migrations |
+| `stale.yml` | weekly | Stale pull requests · Delete merged branches |
+| `protect-main.yml` | push to `main` | Audit direct pushes to main |
 | `workflow-security.yml` | PR, push to `main`, weekly, manual | Workflow Security |
 | `scorecard.yml` | push to `main`, weekly, branch-protection change, manual | Scorecard Analysis |
 | `release-drafter.yml` | push to `main`, manual | Draft release notes |
@@ -541,8 +578,13 @@ the team wants to read the rule insights before anything is rejected.
 documentation-only pull request still runs the full hygiene and secret gate,
 because a documentation-only pull request is exactly where a `.env` file or a
 screenshot of a credentials page tends to slip in. The expensive, application
-specific jobs (`db-check.yml`, `e2e.yml`) are path-filtered so a copy tweak does
-not spin up a Supabase stack.
+specific jobs are filtered so a copy tweak does not spin them up:
+`db-check.yml` runs only when `supabase/**` changes, and `e2e.yml` skips
+documentation-only changes (`**/*.md`, `docs/**`).
+
+`e2e.yml` is filtered by what it can *ignore*, not by what it watches. It used
+to watch only `tests/e2e/**` and the Playwright config, so a change to the
+application — the thing the suite exists to protect — never ran it.
 
 ---
 
@@ -734,7 +776,7 @@ jobs:
     timeout-minutes: 15   # always set one; a hung job burns runner minutes
 ```
 
-Three rules that are not negotiable:
+Four rules that are not negotiable:
 
 1. **Never interpolate an untrusted value into a `run:` block.** `github.head_ref`,
    `github.event.pull_request.title` and `github.event.pull_request.body` are all
@@ -742,14 +784,15 @@ Three rules that are not negotiable:
    name. Pass them through `env:` and reference them as `"$VAR"`.
 2. **Set `permissions:`.** The default token scope is broader than almost any
    job needs.
+3. **Always report a conclusion.** If a job has nothing to do, succeed with a
+   `::notice::` rather than being skipped.
 4. **Do not gate a cheap job on an expensive one.** `PR Conventions` reports on
    the title, the branch name and the PR size — all things a contributor can fix
    without touching code. Gating it behind `Repository Hygiene` left it
-   "skipped" whenever hygiene failed, which told the contributor nothing. Cheap
+   "skipped" whenever hygiene failed, which told the contributor nothing; it now
+   lives in its own workflow and re-runs on a title or label edit. Cheap
    diagnostic jobs run unconditionally; expensive ones (`Verify`, which needs a
    full install and build) are allowed to depend on them.
-3. **Always report a conclusion.** If a job has nothing to do, succeed with a
-   `::notice::` rather than being skipped.
 
 ---
 
@@ -765,20 +808,23 @@ Three rules that are not negotiable:
   push; the workflow is what tells you it happened.
 - **The `accessibility` job is advisory.** Lighthouse in CI is a rough proxy; the
   roadmap still requires a manual NVDA/VoiceOver pass before launch.
-- **Branch protection still needs one human action.** All five rulesets are
-  written, validated by `check-rulesets.sh`, and ready — but they cannot be
-  applied from an automation token. GitHub App installation tokens get
-  `Resource not accessible by integration` on the rulesets API even with admin
-  permission on the repository. Somebody has to run `apply.sh` with a personal
-  access token, or import each file through Settings → Rules → Rulesets. Until
-  then the gate is advisory: CI reports, but nothing prevents a push to `main`.
+- **The four rulesets are applied** (2026-11-15). They cannot be re-applied from
+  an automation token — GitHub App installation tokens get `Resource not
+  accessible by integration` on the rulesets API even with admin permission — so
+  after editing a file in `.github/branch-protection/rulesets/`, somebody runs
+  `apply.sh` with a personal access token, or imports the file through
+  Settings → Rules → Rulesets.
 - **`required_signatures` is off by default**, and ships as an opt-in file
   (`optional/require-signed-commits.json`). See §5.5.
 - **Push rulesets are not applied.** They need the GitHub Team plan; the exact
   payload to add when the club upgrades is in §5.6.
-- **The branch-naming ruleset rejects a push rather than explaining it.** The
-  local hook and CONTRIBUTING.md remain the primary teacher; the ruleset is the
-  backstop for contributors who never installed the hook. See §5.4.
+- **The branch-naming and tag-naming rulesets do not appear to be enforced.**
+  Name patterns are "metadata restriction" rules, which GitHub does not enforce
+  on the Free plan this organisation uses: `OssSvit-patch-1` and
+  `revert-49-feat/pr-agent-gemini-reviewer` were both pushed after the
+  branch-naming ruleset was applied. The `PR Conventions` check
+  (`check-branch-name.sh`) and the local hook are therefore the real gate on
+  branch names. See §5.4.
 - **`@Open-Source-Software-Club/*` teams do not exist yet**, so CODEOWNERS uses
   individual usernames. Switching to teams is a one-line-per-section change,
   documented in the CODEOWNERS header.

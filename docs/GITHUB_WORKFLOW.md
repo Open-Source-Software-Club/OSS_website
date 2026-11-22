@@ -17,7 +17,7 @@ Trunk-based development.
 
 ## Commit conventions
 
-[Conventional Commits](https://www.conventionalcommits.org/) enforced by commitlint (PR title lint since we squash-merge).
+[Conventional Commits](https://www.conventionalcommits.org/), enforced by `scripts/checks/check-commit-msg.sh` (the `commit-msg` hook and every commit in a PR) and by `check-pr-meta.sh` on the PR title, since we squash-merge. Both run in the `PR Conventions` check; there is no commitlint.
 
 Examples:
 - `feat(contribute): add difficulty filter`
@@ -146,14 +146,6 @@ jobs:
       - run: bash scripts/checks/check-text-hygiene.sh
       # + YAML syntax, actionlint, CODEOWNERS validation
 
-  pr-conventions:                # required check — PRs only
-    name: PR Conventions
-    needs: hygiene
-    steps:
-      - run: bash scripts/checks/check-branch-name.sh "$HEAD_REF"
-      - run: bash scripts/checks/check-commit-msg.sh --range "origin/$BASE_REF...HEAD"
-      - run: bash scripts/checks/check-pr-meta.sh
-
   verify:                        # required check — activates with package.json
     name: Verify (Lint · Types · Tests · Build)
     needs: hygiene
@@ -169,6 +161,21 @@ jobs:
   accessibility:                 # advisory until the app exists
     name: Accessibility (Lighthouse)
     needs: verify
+```
+
+```yaml
+# .github/workflows/pr-conventions.yml — its own workflow so that editing the
+# title or labels re-runs it (a Re-run replays the original payload).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+jobs:
+  pr-conventions:                # required check — PRs only, no `needs:`
+    name: PR Conventions
+    steps:
+      - run: bash scripts/checks/check-branch-name.sh "$HEAD_REF"
+      - run: bash scripts/checks/check-commit-msg.sh --range "origin/$BASE_REF...HEAD"
+      - run: bash scripts/checks/check-pr-meta.sh
 ```
 
 Sibling workflows: `security.yml` (Secret Scan · Dependency Review),
@@ -187,6 +194,6 @@ The authoritative description of all of this is `docs/CI_CD.md`.
 ### Deployment integration
 
 - **Vercel** native Git integration for Preview (every PR) and Production (`main`) deploys
-- GitHub Actions is the **quality gate** (branch protection requires `verify`, `db`, `e2e`, + Vercel check)
+- GitHub Actions is the **quality gate** (branch protection requires `Repository Hygiene`, `PR Conventions`, `Verify (Lint · Types · Tests · Build)`, `Secret Scan` and `Dependency Review`; database, E2E and Lighthouse checks are advisory — see `docs/CI_CD.md` §3)
 - Don't duplicate deploys from Actions
 - **Database migrations:** applied to prod by a manual-approval workflow (`supabase db push`) — never auto from PR
