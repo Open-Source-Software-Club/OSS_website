@@ -54,6 +54,8 @@ jobs:
         id: inspect
         env:
           SHA: ${{ github.sha }}
+          # The ref's previous tip; all zeros when this push created the branch.
+          BEFORE: ${{ github.event.before }}
         run: |
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
@@ -80,7 +82,12 @@ jobs:
           # An initial commit (no parents) is the bootstrap commit of a new repo
           # or fork. It can never come from a PR, so raising an incident would be
           # a false positive on every fresh setup. Skip it explicitly.
-          if [ "$((parents - 1))" -eq 0 ]; then
+          #
+          # Only when this push CREATED the branch, though. A parentless commit
+          # pushed over an existing main means its whole history was replaced
+          # by an orphan — the most serious bypass this workflow exists to
+          # report — so that case still raises the incident.
+          if [ "$((parents - 1))" -eq 0 ] && [ "$BEFORE" = '0000000000000000000000000000000000000000' ]; then
             echo "is_initial=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_initial=false" >> "$GITHUB_OUTPUT"
