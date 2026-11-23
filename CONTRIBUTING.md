@@ -59,25 +59,34 @@ If you encounter or suspect inappropriate behavior, please report it privately f
 Before writing any code, search existing issues to see what needs work:
 
 1. Visit our **[GitHub Issues](https://github.com/Open-Source-Software-Club/OSS_website/issues)** page.
-2. Filter issues by tags:
-   - `good first issue` — Welcoming entry-level tasks ideal for newcomers.
+2. Filter issues by label (the full taxonomy is in [`.github/labels.yml`](.github/labels.yml)):
+   - `good first issue` / `difficulty: beginner` — Welcoming entry-level tasks ideal for newcomers.
    - `help wanted` — Triaged issues where maintainers need community assistance.
-   - `bug` — Something isn't working as intended.
-   - `documentation` — Improvements to README, guides, or code comments.
-   - `enhancement` — Feature requests or performance improvements.
+   - `type: bug` — Something isn't working as intended.
+   - `type: docs` — Improvements to README, guides, or code comments.
+   - `type: feature` / `type: enhancement` — New functionality, or improvements to what exists.
+   - `area: frontend`, `area: backend`, `area: design`, … — Which part of the project the work touches.
+
+   Issues labelled `needs triage` have not been reviewed by a maintainer yet; pick one that has.
 3. If you want to propose a new feature or report a new bug that doesn't have an issue yet, **please open an issue first** before opening a PR. This ensures your idea aligns with the project vision and avoids wasted effort.
 
 ---
 
 ## ✋ Claiming an Issue
 
-To prevent duplicate effort and ensure fair opportunity:
+To prevent duplicate effort and ensure fair opportunity, every piece of work belongs to exactly one person at a time:
 
-1. Comment directly on the issue:
-   > *"Hi maintainers! I would like to work on this issue. Please assign it to me."*
-2. **Wait for a maintainer to assign the issue to you** before starting work.
-3. If you get assigned to an issue and later realize you cannot complete it, please post a quick comment so another contributor can step in.
-4. **Inactivity Policy:** If an assigned issue receives no updates, linked PR, or communication within **7 days**, maintainers reserve the right to unassign it and open it for others.
+1. Find an open issue that is **unassigned** and **not** labelled `needs triage` or `blocked`.
+2. Comment exactly:
+   > `/assign`
+
+   The issue is assigned to you straight away, labelled `in progress`, and you get a reply with the next steps. No need to wait for a maintainer.
+3. You can hold **two** claimed issues at a time. Finish one (or give it back) before claiming a third.
+4. Changed your mind, or got busy? Comment `/unassign` — that's always fine, and it frees the issue for someone else.
+5. **Inactivity Policy:** if there's no comment from you and no linked pull request for **7 days**, you get a friendly reminder. If there's still nothing **7 days after the reminder**, the issue is released for others. Any comment ("still on it", "stuck on X") resets the clock.
+6. In your pull request, write `Closes #<issue>` in the description. The PR automation checks that the issue is yours and tells you early if it isn't.
+
+Questions that aren't about a specific issue — "how do I…?", "would you accept…?" — go to [Discussions](https://github.com/Open-Source-Software-Club/OSS_website/discussions): **Q&A** for help, **Ideas** for proposals that aren't ready to be issues yet.
 
 ---
 
@@ -328,7 +337,9 @@ Your pull request cannot be merged unless all of these are true:
 - at least one approving review from a code owner (CODEOWNERS has a `*` entry,
   so every pull request has code owners)
 - all review conversations are resolved
-- the branch is up to date with `main`
+
+You do **not** need to keep your branch up to date with `main` once it is
+approved: the merge queue (below) does that for you.
 
 ### If a check blocks you and you think it is wrong
 
@@ -377,6 +388,20 @@ git push origin <your-branch-name>
    - **How Has This Been Tested?** and the **Checklist:** tests, linting, and responsive design.
 6. If you got the title wrong, just edit it — the `PR Conventions` check re-runs
    on its own. You do not need to push a new commit.
+
+### 4. Review and merge
+
+1. The owning team is asked for a review automatically ([MAINTAINERS.md](MAINTAINERS.md)).
+   Expect a first review within about three working days; if there's none by
+   then, mention the team named in the review request.
+2. Address the review by pushing more commits to the same branch. Don't
+   force-push over commits a reviewer has already seen, and don't open a new
+   pull request.
+3. Once it is approved and the checks are green, a maintainer presses
+   **Merge when ready**. Your pull request joins the **merge queue**, which
+   tests it on top of the latest `main` and squash-merges it. If something
+   that landed in the meantime breaks it, it is taken out of the queue and you
+   get a comment explaining why — otherwise there is nothing for you to do.
 
 ---
 

@@ -32,6 +32,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # The merge queue (see docs/CI_CD.md §5.1) re-runs the required checks on the
+  # exact commit that will land on main. Without this trigger the checks never
+  # report there, and every queued pull request waits until it times out.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:

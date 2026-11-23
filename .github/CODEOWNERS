@@ -1,138 +1,95 @@
 # ==============================================================================
 # CODEOWNERS — who must review what
 #
-# Docs: docs/CI_CD.md · docs/GITHUB_WORKFLOW.md
+# Docs: MAINTAINERS.md (the same information in words) · GOVERNANCE.md
 #
-# This file is what turns "please be careful with these files" into a rule that
-# GitHub enforces. A pull request that touches a path listed here cannot be
-# merged until a code owner approves it — which is what makes the "two approvals
-# for supabase/migrations and lib/github" rule real rather than aspirational.
+# A pull request that touches a path listed here cannot merge until one of the
+# path's owners approves it ("Protect main" requires a code-owner review).
 #
 # HOW TO READ THIS FILE
-#   * The LAST matching pattern wins.
-#   * `*` matches everything and must come first.
-#   * Owners are individual @usernames, listed in the role table below.
+#   * The LAST matching pattern wins, so `*` comes first.
+#   * Owners are the organisation's teams wherever a team matches the
+#     responsibility; individuals only where no team does (club leadership
+#     documents).
 #
-# WHY INDIVIDUALS AND NOT TEAMS
-#   A CODEOWNERS entry that references a team which does not exist matches
-#   nothing. Combined with "require code owner review" in branch protection,
-#   that means a pull request can NEVER be merged — the requirement is simply
-#   unsatisfiable. Individual usernames always resolve, so this file works the
-#   moment it is committed.
+# WHY TEAMS
+#   Listing every maintainer by name made GitHub request a review from all
+#   seven of them on every pull request, so nobody in particular owned it.
+#   A team is requested once. With "Code review assignment" turned on in the
+#   team's settings (Organisation → Teams → <team> → Settings → Code review),
+#   GitHub assigns one or two members in rotation instead — see MAINTAINERS.md.
 #
-#   Once the club creates @Open-Source-Software-Club/core-team,
-#   @Open-Source-Software-Club/technical-leads and
-#   @Open-Source-Software-Club/design-team in the organisation, replace the
-#   username groups below with the team names. The comments mark exactly which
-#   lines change; nothing else about the file needs to move.
+# A team named here must exist and have write access to this repository, or the
+# entry matches nothing and, with code-owner review required, nothing under it
+# could ever merge. `gh api repos/Open-Source-Software-Club/OSS_website/codeowners/errors`
+# lists any line GitHub cannot resolve.
 #
-# ROLE TABLE (from README.md § Maintainers & Core Team)
-#   core-team        — every maintainer: President, both Vice Presidents, both
-#                      Technical Leads, Secretary, Joint Secretary
-#   technical-leads  — @NizzyStark (Siddharth C), @Yashwanth-202011 (Yashwanth Gowda H)
-#   design-team      — no dedicated design lead is listed yet; core-team covers
-#                      design paths until one is appointed
-#
-# REVIEW REQUIREMENTS (enforced by .github/branch-protection/ruleset.json)
-#   1 approval        — everything
-#   2 approvals       — lib/github, supabase/migrations, lib/rbac
-#                       (a second approval is required because these paths hold
-#                       tokens, trust boundaries and authorisation decisions)
+# TEAMS (membership is managed in the organisation settings)
+#   @Open-Source-Software-Club/technical-leads — CI/CD, security, database
+#   @Open-Source-Software-Club/core-team       — everything else
 # ==============================================================================
 
 # Default owner for everything in the repository.
-*                           @Hiteshsai007 @Tarun4201 @harshab054 @NizzyStark @Yashwanth-202011 @Rakshitha-JK7 @Shreekar-cloud
+*                                   @Open-Source-Software-Club/core-team
 
 # ------------------------------------------------------------------------------
 # CI/CD and repository automation
 #
 # A change to the pipeline is a change to what the club is allowed to ship.
-# These paths need the technical leads, not just any maintainer.
-#
-# Replace with: @Open-Source-Software-Club/technical-leads
 # ------------------------------------------------------------------------------
-/.github/                           @NizzyStark @Yashwanth-202011
-/.github/workflows/                 @NizzyStark @Yashwanth-202011
-/.github/branch-protection/         @NizzyStark @Yashwanth-202011
-/.github/CODEOWNERS                 @Hiteshsai007 @NizzyStark @Yashwanth-202011
-/.github/dependabot.yml             @NizzyStark @Yashwanth-202011
-/.github/labels.yml                 @Hiteshsai007 @NizzyStark @Yashwanth-202011
-/.github/allowed-files.txt          @NizzyStark @Yashwanth-202011
-/.github/large-files.allowlist      @NizzyStark @Yashwanth-202011
-/.github/lighthouse/                @NizzyStark @Yashwanth-202011
+/.github/                           @Open-Source-Software-Club/technical-leads
+/.github/CODEOWNERS                 @Open-Source-Software-Club/technical-leads @Hiteshsai007
+/.github/labels.yml                 @Open-Source-Software-Club/technical-leads @Hiteshsai007
+/.github/ISSUE_TEMPLATE/            @Open-Source-Software-Club/core-team
+/.github/DISCUSSION_TEMPLATE/       @Open-Source-Software-Club/core-team
+/.github/PULL_REQUEST_TEMPLATE.md   @Open-Source-Software-Club/core-team
 
 # The repository gate scripts are shared infrastructure: a change here changes
 # what is blocked for every contributor, locally and in CI.
-/scripts/                           @NizzyStark @Yashwanth-202011
-/.githooks/                         @NizzyStark @Yashwanth-202011
-/.gitattributes                     @NizzyStark @Yashwanth-202011
-/.gitignore                         @NizzyStark @Yashwanth-202011
+/scripts/                           @Open-Source-Software-Club/technical-leads
+/.githooks/                         @Open-Source-Software-Club/technical-leads
+/.devcontainer/                     @Open-Source-Software-Club/technical-leads
+/.gitattributes                     @Open-Source-Software-Club/technical-leads
+/.gitignore                         @Open-Source-Software-Club/technical-leads
 
 # ------------------------------------------------------------------------------
-# Database — two approvals required
+# Database
 #
 # A migration mistake does not break a page; it exposes a table or destroys
 # data. docs/DATABASE_SCHEMA.md requires an RLS test for every policy.
-#
-# Replace with: @Open-Source-Software-Club/technical-leads
 # ------------------------------------------------------------------------------
-/supabase/migrations/               @NizzyStark @Yashwanth-202011
-/supabase/tests/                    @NizzyStark @Yashwanth-202011
-/supabase/seed.sql                  @NizzyStark @Yashwanth-202011
-/supabase/config.toml               @NizzyStark @Yashwanth-202011
+/supabase/                          @Open-Source-Software-Club/technical-leads
 
 # ------------------------------------------------------------------------------
-# Security-sensitive application code — two approvals required
+# Security-sensitive application code
 #
 # These modules hold tokens, trust boundaries and authorisation decisions.
-#
-# Replace with: @Open-Source-Software-Club/technical-leads
-#
-# NOTE: Paths marked "Phase N" do not exist yet. CODEOWNERS rules activate
-# automatically when the path is first created — no edit to this file is
-# needed at that point. Verify the rule fires on the first PR that adds the
-# path.
+# Paths that do not exist yet take effect the moment they are created.
 # ------------------------------------------------------------------------------
-# Phase 3
-/src/lib/github/                    @NizzyStark @Yashwanth-202011
-# Phase 4 — does not exist yet
-/src/lib/rbac/                      @NizzyStark @Yashwanth-202011
-# Phase 1
-/src/lib/env/                       @NizzyStark @Yashwanth-202011
-# Phase 2
-/src/lib/supabase/                  @NizzyStark @Yashwanth-202011
-# Phase 4 — does not exist yet
-/src/middleware.ts                  @NizzyStark @Yashwanth-202011
-# Phase 3 — does not exist yet
-/src/app/api/webhooks/              @NizzyStark @Yashwanth-202011
-# Phase 3 — does not exist yet
-/src/app/api/cron/                  @NizzyStark @Yashwanth-202011
-# Phase 5 — does not exist yet
+/src/lib/github/                    @Open-Source-Software-Club/technical-leads
+/src/lib/rbac/                      @Open-Source-Software-Club/technical-leads
+/src/lib/env/                       @Open-Source-Software-Club/technical-leads
+/src/lib/supabase/                  @Open-Source-Software-Club/technical-leads
+/src/middleware.ts                  @Open-Source-Software-Club/technical-leads
+/src/app/api/webhooks/              @Open-Source-Software-Club/technical-leads
+/src/app/api/cron/                  @Open-Source-Software-Club/technical-leads
+
+# The admin area is run by the club's leadership.
 /src/app/admin/                     @Hiteshsai007 @Tarun4201 @harshab054
 
 # ------------------------------------------------------------------------------
-# Design system — shared by every feature module
-#
-# docs/architecture.md: "shared files (tokens.css, lib/github) are
-# CODEOWNERS-protected" so that parallel work does not collide.
-#
-# Replace with: @Open-Source-Software-Club/design-team once it exists.
+# Governance and security documents
 # ------------------------------------------------------------------------------
-/src/styles/                        @Hiteshsai007 @Tarun4201 @harshab054 @Rakshitha-JK7 @Shreekar-cloud
-/src/components/ui/                 @Hiteshsai007 @Tarun4201 @harshab054 @Rakshitha-JK7 @Shreekar-cloud
-/src/components/layout/             @Hiteshsai007 @Tarun4201 @harshab054 @Rakshitha-JK7 @Shreekar-cloud
+/SECURITY.md                        @Open-Source-Software-Club/technical-leads
+/GOVERNANCE.md                      @Open-Source-Software-Club/technical-leads
+/MAINTAINERS.md                     @Open-Source-Software-Club/technical-leads
+/CONTRIBUTING.md                    @Open-Source-Software-Club/technical-leads @Hiteshsai007
 
-# ------------------------------------------------------------------------------
-# Governance documents
-# ------------------------------------------------------------------------------
+# Club documents, owned by the club's leadership.
 /CODE_OF_CONDUCT.md                 @Hiteshsai007 @Tarun4201 @harshab054
-/SECURITY.md                        @NizzyStark @Yashwanth-202011
-/CONTRIBUTING.md                    @Hiteshsai007 @NizzyStark @Yashwanth-202011
 /LICENSE                            @Hiteshsai007 @Tarun4201 @harshab054
 /CHANGELOG.md                       @Hiteshsai007 @Tarun4201 @harshab054
 /README.md                          @Hiteshsai007 @Tarun4201 @harshab054
 
-# ------------------------------------------------------------------------------
 # Brand assets — do not let a logo be overwritten by accident.
-# ------------------------------------------------------------------------------
 /public/assets/brand/               @Hiteshsai007 @Tarun4201 @harshab054

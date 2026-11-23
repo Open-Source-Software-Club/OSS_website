@@ -113,7 +113,7 @@
 
 - name: 'in progress'
   color: '6EA8FE'
-  description: 'Has an assignee or an open linked pull request'
+  description: 'Claimed with /assign; the claim bot reminds and releases it after inactivity'
 
 # ------------------------------------------------------------------------------
 # Priority
@@ -135,7 +135,12 @@
   description: 'Nice to have'
 
 # ------------------------------------------------------------------------------
-# Compatibility labels kept for the existing issue templates
+# Legacy GitHub default labels.
+#
+# The issue forms used to apply these, which kept new issues out of the
+# website's `type:` filters. The forms now apply the `type:` labels above; these
+# stay only because issues filed earlier carry them. Do not apply them to new
+# issues — use `type: bug`, `type: feature`/`type: enhancement` or `type: docs`.
 # ------------------------------------------------------------------------------
 - name: 'bug'
   color: 'F26B6B'
@@ -153,8 +158,9 @@
 # Size exemption
 #
 # The only label that changes what CI enforces. Applying it exempts a pull
-# request from the PR Conventions size limits. It is CODEOWNERS-protected and
-# every use emits a warning in the Checks tab, so the exemption is always
+# request from the PR Conventions size limits. Only people with triage access
+# or above can apply labels (CODEOWNERS cannot restrict a label), and every use
+# emits a warning in the Checks tab, so the exemption is always
 # visible and always audited.
 # ------------------------------------------------------------------------------
 - name: 'size: exempt'

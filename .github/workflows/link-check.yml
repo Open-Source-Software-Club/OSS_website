@@ -1,0 +1,59 @@
+# ==============================================================================
+# Link check — external links in the documentation, weekly
+#
+# Docs: docs/CI_CD.md §4.10
+#
+# `check-docs.sh` (part of Repository Hygiene) checks every RELATIVE link on
+# every pull request, because a missing file is a definite error. External
+# URLs are checked here instead, once a week: a check that depends on other
+# people's servers fails for reasons that have nothing to do with the pull
+# request in front of you, and a required check that fails at random trains
+# everyone to ignore it.
+#
+# A failed run is the signal: the summary lists every broken link with the
+# file it is in. Run it by hand (Actions → Link check → Run workflow) after a
+# large documentation change.
+# ==============================================================================
+
+name: Link check
+
+on:
+  schedule:
+    - cron: '0 5 * * 1' # Mondays, 10:30 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: External links in Markdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # --exclude: placeholders and addresses that only exist once the site is
+      # deployed, plus GitHub pages that need a signed-in session to render.
+      # --accept 429: a rate-limited link is not a broken link.
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --no-progress
+            --max-retries 3
+            --retry-wait-time 5
+            --accept 200,206,429
+            --exclude '^https?://(localhost|127\.0\.0\.1)'
+            --exclude 'example\.(com|org)'
+            --exclude 'ci-placeholder'
+            --exclude '^https://github\.com/[^/]+/[^/]+/(security/advisories/new|settings|compare|edit)'
+            './**/*.md'
+          format: markdown
+          output: lychee/report.md
+          jobSummary: true
+          fail: true
+          token: ${{ secrets.GITHUB_TOKEN }}

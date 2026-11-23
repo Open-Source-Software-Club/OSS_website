@@ -6,13 +6,14 @@ The Open Source Software Club at Sai Vidya Institute of Technology (SVIT) takes 
 
 ## 🛡️ Supported Versions
 
-We actively maintain and provide security patches for the versions listed below. Because our web platform follows a continuous deployment lifecycle, we strongly recommend running against the latest commit on the `main` branch.
+The website is deployed continuously from `main`, and nothing has been released
+or tagged yet, so `main` is the only supported line. When versioned releases
+begin, this table will list the release lines that receive security fixes.
 
-| Version / Branch | Supported | Release Date | Notes |
-|:---|:---:|:---|:---|
-| `main` (Latest) | :white_check_mark: | Ongoing | Production release deployed to Vercel |
-| `v1.x` | :white_check_mark: | 2024 - Present | Current major release track |
-| `< v1.0.0` (Pre-release) | :x: | Prior to 2024 | Legacy experimental code; unsupported |
+| Version / Branch | Supported | Notes |
+|:---|:---:|:---|
+| `main` | :white_check_mark: | The only supported line; fixes land here first |
+| Anything else (forks, old commits) | :x: | Update to the latest `main` |
 
 ---
 
@@ -26,12 +27,12 @@ We actively maintain and provide security patches for the versions listed below.
 2. Click **Report a vulnerability** to open a private advisory draft.
 3. This allows secure, encrypted collaboration directly between you and the repository maintainers.
 
-### Alternative Method: Direct Security Email
-If you are unable to use GitHub Security Advisories, send an encrypted or direct email to our security team:
-
-- **Primary Security Email:** `[PLACEHOLDER: oss-security@saividya.ac.in]`
-- **Secondary Contact:** `[PLACEHOLDER: faculty-coordinator@saividya.ac.in]`
-- **Subject Line:** `[SECURITY] Potential vulnerability in OSS_website`
+### If you cannot use GitHub Security Advisories
+Private vulnerability reporting is the only channel the maintainers monitor for
+security reports. If you cannot use it, open a **public** issue that says only
+*"I have a security report and need a private channel"* — no details — or
+mention one of the security owners listed in [MAINTAINERS.md](MAINTAINERS.md),
+and a maintainer will arrange a private conversation.
 
 ---
 

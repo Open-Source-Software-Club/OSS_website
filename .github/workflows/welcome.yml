@@ -1,0 +1,57 @@
+# ==============================================================================
+# Welcome — a first issue or first pull request gets a human-sounding hello
+#
+# Docs: CONTRIBUTING.md · GOVERNANCE.md
+#
+# A first-time contributor's first question is "did anyone see this?". For a
+# student club that is the moment that decides whether they come back, so the
+# first issue and the first pull request each get a reply that says what
+# happens next and where to ask for help. Later ones get nothing from this bot.
+#
+# `pull_request_target` is what lets the reply reach a pull request from a
+# fork (a `pull_request` token is read-only there). It is safe because this
+# workflow checks out nothing and runs nothing from the contribution; the
+# message is fixed text. The reasoning is recorded in .github/zizmor.yml.
+# ==============================================================================
+
+name: Welcome
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  welcome:
+    name: Welcome first-time contributors
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # comment on a first issue
+      pull-requests: write # comment on a first pull request
+    timeout-minutes: 5
+    steps:
+      - name: Greet a first issue or pull request
+        uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
+        with:
+          issue_message: |
+            Welcome, and thank you for opening your first issue here! 👋
+
+            A maintainer will triage it — label it, ask a question, or explain why it won't be taken on — within about three working days ([GOVERNANCE.md](https://github.com/Open-Source-Software-Club/OSS_website/blob/main/GOVERNANCE.md#response-targets)).
+
+            - Want to work on it yourself? Once the `needs triage` label is gone, comment `/assign` and it's yours.
+            - Questions about how something works are often quicker in [Discussions → Q&A](https://github.com/Open-Source-Software-Club/OSS_website/discussions/categories/q-a).
+          pr_message: |
+            Welcome, and thank you for your first pull request here! 🎉
+
+            What happens next:
+
+            1. **Checks run automatically.** If one fails, its log says exactly what to change — the most common ones are the PR title (`<type>(<scope>): <subject>`) and the branch name (`<type>/<description>`). If you fix the title, just edit it; the check re-runs by itself.
+            2. **The code owners are asked for a review**, usually within three working days. If nobody has replied by then, mention the team named in the review request.
+            3. **Once it's approved,** a maintainer adds it to the merge queue, which merges it for you — you don't need to keep your branch up to date.
+
+            Make sure the description says `Closes #<issue>` for the issue you were assigned. Stuck on anything? Ask right here in the pull request — that's what it's for.

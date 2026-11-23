@@ -1,0 +1,42 @@
+// One-click development environment: GitHub Codespaces, or VS Code's
+// "Dev Containers: Reopen in Container". Nothing to install on your machine —
+// the right Node, pnpm and git hooks are set up for you, and the repository
+// gate (scripts/checks/run-all.sh) runs exactly as it does in CI.
+//
+// Codespaces is free for students with the GitHub Student Developer Pack:
+// Code → Codespaces → Create codespace on main.
+{
+  "name": "OSS Club Website",
+  // Node 22, matching NODE_VERSION in .github/workflows/ci.yml. Pinned to an
+  // exact image release so every contributor gets the same environment.
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:5.2.7-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  // corepack installs the pnpm version named by package.json's packageManager
+  // (the same one CI uses); the hooks make commits and pushes run the gate.
+  "postCreateCommand": "corepack enable && git config core.hooksPath .githooks && if [ -f package.json ]; then pnpm install --frozen-lockfile; fi",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Next.js dev server", "onAutoForward": "notify" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "editorconfig.editorconfig",
+        "timonwong.shellcheck"
+      ],
+      "settings": {
+        // The same rules scripts/checks/check-text-hygiene.sh enforces.
+        "files.eol": "\n",
+        "files.insertFinalNewline": true,
+        "files.trimFinalNewlines": true,
+        "files.trimTrailingWhitespace": true,
+        "editor.insertSpaces": true
+      }
+    }
+  }
+}

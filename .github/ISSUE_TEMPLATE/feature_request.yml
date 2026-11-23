@@ -1,7 +1,7 @@
 name: Feature Request
 description: Propose a new feature, improvement, or idea for the OSS Club Website
 title: "[Feature]: "
-labels: ["enhancement"]
+labels: ["type: feature", "needs triage"]
 body:
   - type: markdown
     attributes:
@@ -55,3 +55,12 @@ body:
       placeholder: Any other relevant information, target release milestones, etc.
     validations:
       required: false
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the [open and closed issues](https://github.com/Open-Source-Software-Club/OSS_website/issues?q=is%3Aissue) and this has not been reported yet.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/Open-Source-Software-Club/OSS_website/blob/main/CODE_OF_CONDUCT.md).
+          required: true

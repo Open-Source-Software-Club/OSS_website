@@ -19,7 +19,7 @@
 # What is deliberately not checked
 #   * External URLs. A link check that depends on the network fails when GitHub
 #     rate-limits the runner, which trains people to ignore it. External links
-#     are covered by the scheduled advisory job instead.
+#     are checked weekly by .github/workflows/link-check.yml instead.
 #   * Heading anchors (docs/CI_CD.md#section). GitHub's slugification rules are
 #     subtle enough that a wrong reimplementation would produce false failures.
 #

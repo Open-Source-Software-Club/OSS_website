@@ -1,0 +1,26 @@
+title: '[Idea] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas start here so they can be talked through before anyone writes code. When an idea has support and a clear shape, a maintainer turns it into an issue that someone can `/assign`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Who has the problem, and what do they do today instead?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What you'd build or change. Sketches, links and examples of other sites are welcome.
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you work on it?
+      options:
+        - label: I'd like to help build this if it's accepted.

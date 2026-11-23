@@ -113,3 +113,72 @@ jobs:
 
             await github.rest.issues.addLabels({ owner, repo, issue_number, labels: toAdd });
             core.info(`Applied ${toAdd.join(', ')} from the title.`);
+
+      # The other half of the claim system in issue-claims.yml. A pull request
+      # for an issue somebody else has claimed (or for no issue at all) is how
+      # two people ended up building the same scaffold (#51, #58). Saying so on
+      # day one is kinder than discovering it at review time.
+      #
+      # One comment at most, identified by a marker and edited in place on later
+      # pushes, and removed once the problem is gone. Advisory only: it never
+      # fails a check.
+      - name: Check the pull request's linked issue
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const MARKER = '<!-- pr-automation:linked-issue -->';
+            const MAINTAINER = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            if (!pr || pr.user.type === 'Bot') return;
+
+            const author = pr.user.login;
+            const { repository } = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                 repository(owner: $owner, name: $repo) {
+                   pullRequest(number: $number) {
+                     closingIssuesReferences(first: 10) {
+                       nodes { number assignees(first: 10) { nodes { login } } }
+                     }
+                   }
+                 }
+               }`,
+              { owner, repo, number: pr.number });
+            const linked = repository.pullRequest.closingIssuesReferences.nodes;
+
+            const notes = [];
+            const needsIssue = /^(feat|fix)(\(.+\))?!?:/i.test(pr.title || '');
+            if (linked.length === 0 && needsIssue) {
+              notes.push(
+                'This pull request doesn\'t link an issue. Features and fixes start from an assigned issue so the ' +
+                'approach is agreed before the code is written — add `Closes #<number>` to the description (edit it; ' +
+                'no new commit needed). If there is no issue yet, open one and comment `/assign` on it.');
+            }
+            if (!MAINTAINER.includes(pr.author_association)) {
+              for (const issue of linked) {
+                const assignees = issue.assignees.nodes.map((a) => a.login);
+                if (assignees.length > 0 && !assignees.includes(author)) {
+                  notes.push(
+                    `#${issue.number} is assigned to ${assignees.map((a) => `@${a}`).join(', ')}. Please check with them ` +
+                    'on the issue before going further, so the two of you don\'t duplicate each other\'s work.');
+                } else if (assignees.length === 0) {
+                  notes.push(`#${issue.number} isn't assigned to anyone yet — comment \`/assign\` on it so it's marked as yours.`);
+                }
+              }
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100,
+            });
+            const mine = comments.find((c) => c.user?.type === 'Bot' && (c.body || '').includes(MARKER));
+
+            if (notes.length === 0) {
+              if (mine) await github.rest.issues.deleteComment({ owner, repo, comment_id: mine.id });
+              return;
+            }
+            const body = `${MARKER}\n@${author} a heads-up about the linked issue:\n\n${notes.map((n) => `- ${n}`).join('\n')}`;
+            if (mine) {
+              if (mine.body !== body) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            }

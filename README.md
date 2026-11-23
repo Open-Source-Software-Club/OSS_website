@@ -33,13 +33,19 @@
     <img src="https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
   </a>
   <a href="https://vercel.com/">
-    <img src="https://img.shields.io/badge/Deployed_on-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel Deployment" />
+    <img src="https://img.shields.io/badge/Hosting-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Hosting: Vercel" />
   </a>
   <a href="https://github.com/Open-Source-Software-Club/OSS_website/actions/workflows/security.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/Open-Source-Software-Club/OSS_website/security.yml?branch=main&style=for-the-badge&logo=github&label=Security" alt="Security Status" />
   </a>
   <a href="https://github.com/Open-Source-Software-Club/OSS_website/blob/main/docs/CI_CD.md">
     <img src="https://img.shields.io/badge/CI%2FCD-documented-22C55E?style=for-the-badge&logo=githubactions&logoColor=white" alt="CI/CD documented" />
+  </a>
+  <a href="https://github.com/Open-Source-Software-Club/OSS_website/labels/good%20first%20issue">
+    <img src="https://img.shields.io/github/issues/Open-Source-Software-Club/OSS_website/good%20first%20issue?style=for-the-badge&label=good%20first%20issues&color=7057ff" alt="Open good first issues" />
+  </a>
+  <a href="https://github.com/Open-Source-Software-Club/OSS_website/discussions">
+    <img src="https://img.shields.io/github/discussions/Open-Source-Software-Club/OSS_website?style=for-the-badge&logo=github&label=Discussions" alt="GitHub Discussions" />
   </a>
 </p>
 
@@ -373,7 +379,12 @@ We warmly welcome contributions from students, faculty, alumni, and external ope
 
 1. Read our **[Contributing Guide](CONTRIBUTING.md)** for our step-by-step workflow, Git branch naming standards, and coding conventions.
 2. Review our **[Code of Conduct](CODE_OF_CONDUCT.md)** to understand our community standards and pledge.
-3. Check the **[Issues Tab](https://github.com/Open-Source-Software-Club/OSS_website/issues)** for issues marked `good first issue` or `help wanted`.
+3. Check the **[Issues Tab](https://github.com/Open-Source-Software-Club/OSS_website/issues)** for issues marked `good first issue` or `help wanted`, and comment `/assign` on the one you want — it's yours immediately.
+4. Ask anything in **[Discussions](https://github.com/Open-Source-Software-Club/OSS_website/discussions)**.
+
+**No local setup?** Open the repository in **GitHub Codespaces** (Code → Codespaces → Create codespace on main): Node, pnpm and the git hooks are configured for you by [`.devcontainer/`](.devcontainer/devcontainer.json).
+
+Who reviews what, and how decisions are made: **[MAINTAINERS.md](MAINTAINERS.md)** · **[GOVERNANCE.md](GOVERNANCE.md)**. Using an AI coding assistant? Point it at **[AGENTS.md](AGENTS.md)**.
 
 ---
 
